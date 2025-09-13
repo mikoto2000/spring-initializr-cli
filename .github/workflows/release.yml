@@ -47,8 +47,9 @@ jobs:
           EXT=""
           if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
           BIN_NAME="spring-initializr-cli${EXT}"
+          VERSION="${GITHUB_REF_NAME}"
           GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
-            go build -trimpath -ldflags "-s -w" -o "${OUT_DIR}/${BIN_NAME}" .
+            go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o "${OUT_DIR}/${BIN_NAME}" .
           # Include docs/licenses in the archive
           cp -f README.md LICENSE "${OUT_DIR}/" || true
 
@@ -79,4 +80,3 @@ jobs:
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-

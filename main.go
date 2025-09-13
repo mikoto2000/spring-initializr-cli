@@ -16,6 +16,9 @@ import (
 
 const defaultBaseURL = "https://start.spring.io"
 
+// version is set at build time via -ldflags "-X main.version=<version>"
+var version = "dev"
+
 type options struct {
 	baseURL      string
 	target       string // zip or tgz (only zip implemented for now)
@@ -38,8 +41,11 @@ type options struct {
 	timeout int    // seconds
 	verbose bool
 
-	// interactive control (not a flag)
-	interactive bool
+    // interactive control (not a flag)
+    interactive bool
+
+    // show version and exit
+    showVersion bool
 }
 
 func main() {
@@ -72,9 +78,11 @@ func parseFlags() options {
 	flag.BoolVar(&o.extract, "extract", false, "Extract archive into directory (uses base-dir)")
 	flag.BoolVar(&o.dryRun, "dry-run", false, "Print the generated URL and exit")
 	flag.IntVar(&o.timeout, "timeout", 60, "Download timeout in seconds")
-	flag.BoolVar(&o.verbose, "v", false, "Verbose output")
-	flag.BoolVar(&o.interactive, "interactive", false, "Interactive TUI mode")
-	flag.BoolVar(&o.interactive, "i", false, "Interactive TUI mode (shorthand)")
+    flag.BoolVar(&o.verbose, "v", false, "Verbose output")
+    flag.BoolVar(&o.interactive, "interactive", false, "Interactive TUI mode")
+    flag.BoolVar(&o.interactive, "i", false, "Interactive TUI mode (shorthand)")
+    flag.BoolVar(&o.showVersion, "version", false, "Print version and exit")
+    flag.BoolVar(&o.showVersion, "V", false, "Print version and exit (shorthand)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Spring Initializr CLI (Go)\n\n")
@@ -86,7 +94,8 @@ func parseFlags() options {
 		flag.PrintDefaults()
 		fmt.Fprintf(os.Stderr, "\nNotes:\n- Dependencies are Spring Initializr IDs (e.g. web, data-jpa, security).\n")
 		fmt.Fprintf(os.Stderr, "- If --extract is set, the zip will be downloaded and extracted into --base-dir (defaults to artifact-id).\n")
-		fmt.Fprintf(os.Stderr, "- Use --dry-run to just print the URL.\n")
+        fmt.Fprintf(os.Stderr, "- Use --dry-run to just print the URL.\n")
+        fmt.Fprintf(os.Stderr, "- Use --version or -V to print the version.\n")
 	}
 
 	flag.Parse()
@@ -120,10 +129,14 @@ func parseFlags() options {
 }
 
 func run(o options) error {
-	if o.interactive {
-		// Use the full-featured TUI if available
-		return runInteractive(o)
-	}
+    if o.showVersion {
+        fmt.Println(version)
+        return nil
+    }
+    if o.interactive {
+        // Use the full-featured TUI if available
+        return runInteractive(o)
+    }
 	if strings.ToLower(o.target) != "zip" {
 		return fmt.Errorf("unsupported target '%s' (only 'zip' is supported)", o.target)
 	}

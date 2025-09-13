@@ -46,6 +46,9 @@ type options struct {
 
     // show version and exit
     showVersion bool
+
+    // show license and notices and exit
+    showLicense bool
 }
 
 func main() {
@@ -83,6 +86,8 @@ func parseFlags() options {
     flag.BoolVar(&o.interactive, "i", false, "Interactive TUI mode (shorthand)")
     flag.BoolVar(&o.showVersion, "version", false, "Print version and exit")
     flag.BoolVar(&o.showVersion, "V", false, "Print version and exit (shorthand)")
+    flag.BoolVar(&o.showLicense, "license", false, "Print licenses (app + NOTICE) and exit")
+    flag.BoolVar(&o.showLicense, "L", false, "Print licenses (app + NOTICE) and exit (shorthand)")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Spring Initializr CLI (Go)\n\n")
@@ -96,6 +101,7 @@ func parseFlags() options {
 		fmt.Fprintf(os.Stderr, "- If --extract is set, the zip will be downloaded and extracted into --base-dir (defaults to artifact-id).\n")
         fmt.Fprintf(os.Stderr, "- Use --dry-run to just print the URL.\n")
         fmt.Fprintf(os.Stderr, "- Use --version or -V to print the version.\n")
+        fmt.Fprintf(os.Stderr, "- Use --license or -L to print licenses and exit.\n")
 	}
 
 	flag.Parse()
@@ -131,6 +137,10 @@ func parseFlags() options {
 func run(o options) error {
     if o.showVersion {
         fmt.Println(version)
+        return nil
+    }
+    if o.showLicense {
+        printLicenses()
         return nil
     }
     if o.interactive {

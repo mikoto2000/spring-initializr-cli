@@ -18,7 +18,6 @@ func runInteractive(o options) error {
 
     pages := tview.NewPages()
 
-    var cachedMeta *clientMeta
     depCatalog := make(map[string]depOption) // id -> dep info
 
 	// State: selected dependency IDs
@@ -53,12 +52,12 @@ func runInteractive(o options) error {
 	setDropDownValue(ddPackaging, packagings, o.packaging)
 
     ddBootVersion := tview.NewDropDown()
+    ddJavaVersion := tview.NewDropDown()
 	inGroupID := tview.NewInputField().SetText(o.groupID)
 	inArtifactID := tview.NewInputField().SetText(o.artifactID)
 	inName := tview.NewInputField().SetText(o.name)
 	inDescription := tview.NewInputField().SetText(o.description)
-	inPackageName := tview.NewInputField().SetText(o.packageName)
-	inJavaVersion := tview.NewInputField().SetText(o.javaVersion)
+    inPackageName := tview.NewInputField().SetText(o.packageName)
 	inBaseDir := tview.NewInputField().SetText(o.baseDir)
 	inOutput := tview.NewInputField().SetText(o.output)
 	inBaseURL := tview.NewInputField().SetText(o.baseURL)
@@ -78,16 +77,18 @@ func runInteractive(o options) error {
         if _, v := ddBootVersion.GetCurrentOption(); v != "" {
             o.bootVersion = v
         }
+        if _, v := ddJavaVersion.GetCurrentOption(); v != "" {
+            o.javaVersion = v
+        }
         // Inputs
         o.groupID = strings.TrimSpace(inGroupID.GetText())
-		o.artifactID = strings.TrimSpace(inArtifactID.GetText())
-		o.name = strings.TrimSpace(inName.GetText())
-		o.description = strings.TrimSpace(inDescription.GetText())
-		o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
-		o.javaVersion = strings.TrimSpace(inJavaVersion.GetText())
-		o.baseDir = strings.TrimSpace(inBaseDir.GetText())
-		o.output = strings.TrimSpace(inOutput.GetText())
-		o.baseURL = strings.TrimSpace(inBaseURL.GetText())
+        o.artifactID = strings.TrimSpace(inArtifactID.GetText())
+        o.name = strings.TrimSpace(inName.GetText())
+        o.description = strings.TrimSpace(inDescription.GetText())
+        o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
+        o.baseDir = strings.TrimSpace(inBaseDir.GetText())
+        o.output = strings.TrimSpace(inOutput.GetText())
+        o.baseURL = strings.TrimSpace(inBaseURL.GetText())
 		// Dependencies
 		o.dependencies = joinSelected(selectedDeps)
 
@@ -105,36 +106,40 @@ func runInteractive(o options) error {
 	}
 
 	// Build form items
-	form.AddFormItem(labeled(ddProjectType, "Project Type"))
-	form.AddFormItem(labeled(ddLanguage, "Language"))
+    form.AddFormItem(labeled(ddProjectType, "Project Type"))
+    form.AddFormItem(labeled(ddLanguage, "Language"))
     // Boot Version dropdown; options loaded from metadata asynchronously
     if strings.TrimSpace(o.bootVersion) != "" {
         ddBootVersion.SetOptions([]string{o.bootVersion}, nil)
         ddBootVersion.SetCurrentOption(0)
     }
     form.AddFormItem(labeled(ddBootVersion, "Boot Version"))
-	form.AddInputField("Group ID", o.groupID, 0, nil, nil)
-	form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
-	form.AddInputField("Name", o.name, 0, nil, nil)
-	form.AddInputField("Description", o.description, 0, nil, nil)
-	form.AddFormItem(labeled(ddPackaging, "Packaging"))
-	form.AddInputField("Java Version", o.javaVersion, 0, nil, nil)
-	form.AddInputField("Package Name", o.packageName, 0, nil, nil)
-	form.AddInputField("Base Dir", o.baseDir, 0, nil, nil)
-	form.AddInputField("Output Zip", o.output, 0, nil, nil)
-	form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
+    // Java Version dropdown
+    if strings.TrimSpace(o.javaVersion) != "" {
+        ddJavaVersion.SetOptions([]string{o.javaVersion}, nil)
+        ddJavaVersion.SetCurrentOption(0)
+    }
+    form.AddFormItem(labeled(ddJavaVersion, "Java Version"))
+    form.AddInputField("Group ID", o.groupID, 0, nil, nil)
+    form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
+    form.AddInputField("Name", o.name, 0, nil, nil)
+    form.AddInputField("Description", o.description, 0, nil, nil)
+    form.AddFormItem(labeled(ddPackaging, "Packaging"))
+    form.AddInputField("Package Name", o.packageName, 0, nil, nil)
+    form.AddInputField("Base Dir", o.baseDir, 0, nil, nil)
+    form.AddInputField("Output Zip", o.output, 0, nil, nil)
+    form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
 
 	// Hook form items to variables so readOptions sees updated values
-    // index 2 is now Boot Version dropdown (no ChangedFunc needed)
-	form.GetFormItem(3).(*tview.InputField).SetChangedFunc(func(t string) { inGroupID.SetText(t) })
-	form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) { inArtifactID.SetText(t) })
-	form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
-	form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
-	form.GetFormItem(8).(*tview.InputField).SetChangedFunc(func(t string) { inJavaVersion.SetText(t) })
-	form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) { inPackageName.SetText(t) })
-	form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseDir.SetText(t) })
-	form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
-	form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
+    // index 2 is Boot Version dropdown, index 3 is Java Version dropdown (no ChangedFunc needed)
+    form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) { inGroupID.SetText(t) })
+    form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) { inArtifactID.SetText(t) })
+    form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
+    form.GetFormItem(7).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
+    form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) { inPackageName.SetText(t) })
+    form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseDir.SetText(t) })
+    form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
+    form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
 
 	// Buttons
     var postRun func() error // set when Download/Extract is chosen
@@ -154,41 +159,7 @@ func runInteractive(o options) error {
         }
         showTextModal(app, pages, "Selected dependencies", body+"\n\nEsc/Enter to close.", nil)
     })
-    // Removed: Choose Boot Version (now dropdown)
-	form.AddButton("Choose Java Version", func() {
-		curr := readOptions()
-        go func() {
-            var m *clientMeta
-            var err error
-            if cachedMeta != nil {
-                m = cachedMeta
-            } else {
-                m, err = fetchClientMetadata(curr.baseURL, curr.timeout)
-                if err == nil {
-                    cachedMeta = m
-                }
-            }
-            app.QueueUpdateDraw(func() {
-                if err != nil {
-                    showModal(app, pages, fmt.Sprintf("Failed to load metadata\n%v", err), 6*time.Second, nil)
-                    return
-                }
-                // update Boot Version dropdown options too
-                if len(m.BootVersions) > 0 {
-                    ddBootVersion.SetOptions(m.BootVersions, nil)
-                    setDropDownValue(ddBootVersion, m.BootVersions, o.bootVersion)
-                }
-                if len(m.JavaVersions) == 0 {
-                    showModal(app, pages, "No java versions from metadata", 4*time.Second, nil)
-                    return
-                }
-                showStringPicker(app, pages, "Select Java Version", m.JavaVersions, func(sel string) {
-                    inJavaVersion.SetText(sel)
-                    form.GetFormItem(8).(*tview.InputField).SetText(sel)
-                })
-            })
-        }()
-    })
+    // Removed: Choose Boot/Java Version (both dropdowns now)
 	form.AddButton("Show URL", func() {
 		curr := readOptions()
 		if u, err := buildURL(curr); err != nil {
@@ -229,7 +200,6 @@ func runInteractive(o options) error {
         if err != nil {
             return
         }
-        cachedMeta = m
         app.QueueUpdateDraw(func() {
             if len(m.Types) > 0 {
                 ddProjectType.SetOptions(m.Types, nil)
@@ -246,6 +216,10 @@ func runInteractive(o options) error {
             if len(m.BootVersions) > 0 {
                 ddBootVersion.SetOptions(m.BootVersions, nil)
                 setDropDownValue(ddBootVersion, m.BootVersions, o.bootVersion)
+            }
+            if len(m.JavaVersions) > 0 {
+                ddJavaVersion.SetOptions(m.JavaVersions, nil)
+                setDropDownValue(ddJavaVersion, m.JavaVersions, o.javaVersion)
             }
         })
     }()

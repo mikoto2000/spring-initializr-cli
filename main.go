@@ -37,6 +37,9 @@ type options struct {
     dryRun   bool   // print URL and exit
     timeout  int    // seconds
     verbose  bool
+
+    // interactive control (not a flag)
+    interactive bool
 }
 
 func main() {
@@ -70,6 +73,8 @@ func parseFlags() options {
     flag.BoolVar(&o.dryRun, "dry-run", false, "Print the generated URL and exit")
     flag.IntVar(&o.timeout, "timeout", 60, "Download timeout in seconds")
     flag.BoolVar(&o.verbose, "v", false, "Verbose output")
+    flag.BoolVar(&o.interactive, "interactive", false, "Interactive TUI mode")
+    flag.BoolVar(&o.interactive, "i", false, "Interactive TUI mode (shorthand)")
 
     flag.Usage = func() {
         fmt.Fprintf(os.Stderr, "Spring Initializr CLI (Go)\n\n")
@@ -115,6 +120,10 @@ func parseFlags() options {
 }
 
 func run(o options) error {
+    if o.interactive {
+        // Use the full-featured TUI if available
+        return runInteractive(o)
+    }
     if strings.ToLower(o.target) != "zip" {
         return fmt.Errorf("unsupported target '%s' (only 'zip' is supported)", o.target)
     }
@@ -188,6 +197,21 @@ func run(o options) error {
     }
     return nil
 }
+
+// runInteractive provides a simple full-screen, line-based TUI without external deps.
+func applyAction(o options, action string) options {
+    switch action {
+    case "download":
+        o.dryRun = false
+        // extract as chosen
+    case "extract":
+        o.dryRun = false
+        o.extract = true
+    }
+    o.interactive = false
+    return o
+}
+
 
 func buildURL(o options) (string, error) {
     if o.baseURL == "" {
@@ -304,4 +328,3 @@ func unzip(zipPath, destDir string) error {
     }
     return nil
 }
-

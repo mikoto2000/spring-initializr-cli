@@ -5,6 +5,7 @@ Spring Initializr(https://start.spring.io/) をコマンドラインから使い
 使い方
 - ビルド: `go build -o spring-initializr-cli`（リポジトリ直下）
 - ヘルプ: `./spring-initializr-cli -h`
+- 対話（TUI）モード: `./spring-initializr-cli -i`
 
 例
 - ZIP をダウンロードのみ:
@@ -15,6 +16,16 @@ Spring Initializr(https://start.spring.io/) をコマンドラインから使い
 
 - URL のみ確認（ネットワーク不要）:
   `./spring-initializr-cli --dependencies web,data-jpa --dry-run`
+
+TUI の操作（tview ベース）
+- 画面上のフォームで各項目を編集（Tab/Shift+Tab で移動）。
+- 「Select Dependencies」で依存関係の一覧を表示し、Enter で選択/解除、`d` で完了。
+- 「Show URL」で生成 URL を表示。「Download」「Download+Extract」で実行。
+- マウス操作にも対応しています。
+
+依存関係の取得
+- TUI は起動時に Spring Initializr のメタデータ（`/metadata/client` または `/dependencies`）を取得して一覧に表示します。
+- ネットワークに接続できない場合は依存一覧の取得に失敗します。その際はコマンドラインの `--dependencies` 指定をご利用ください。
 
 主なオプション
 - `--type` : `maven-project` / `gradle-project` / `gradle-build`（デフォルト: `maven-project`）

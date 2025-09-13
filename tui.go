@@ -20,6 +20,12 @@ func runInteractive(o options) error {
 
     depCatalog := make(map[string]depOption) // id -> dep info
 
+    // Fetch metadata synchronously before building the UI so defaults match server
+    var meta *clientMeta
+    if m, err := fetchClientMetadata(o.baseURL, o.timeout); err == nil {
+        meta = m
+    }
+
 	// State: selected dependency IDs
 	selectedDeps := make(map[string]bool)
 	if strings.TrimSpace(o.dependencies) != "" {
@@ -46,10 +52,10 @@ func runInteractive(o options) error {
 	ddLanguage := tview.NewDropDown().SetOptions(languages, nil)
 	ddPackaging := tview.NewDropDown().SetOptions(packagings, nil)
 
-	// Set initial selections
-	setDropDownValue(ddProjectType, projectTypes, o.projectType)
-	setDropDownValue(ddLanguage, languages, o.language)
-	setDropDownValue(ddPackaging, packagings, o.packaging)
+    // Set initial selections (will be overridden by metadata defaults if available)
+    setDropDownValue(ddProjectType, projectTypes, o.projectType)
+    setDropDownValue(ddLanguage, languages, o.language)
+    setDropDownValue(ddPackaging, packagings, o.packaging)
 
     ddBootVersion := tview.NewDropDown()
     ddJavaVersion := tview.NewDropDown()
@@ -108,7 +114,7 @@ func runInteractive(o options) error {
 	// Build form items
     form.AddFormItem(labeled(ddProjectType, "Project Type"))
     form.AddFormItem(labeled(ddLanguage, "Language"))
-    // Boot Version dropdown; options loaded from metadata asynchronously
+    // Boot Version dropdown
     if strings.TrimSpace(o.bootVersion) != "" {
         ddBootVersion.SetOptions([]string{o.bootVersion}, nil)
         ddBootVersion.SetCurrentOption(0)
@@ -186,43 +192,57 @@ func runInteractive(o options) error {
 	})
 	form.AddButton("Quit", func() { app.Stop() })
 
-	// Layout
-	frame := tview.NewFrame(form).
-		SetBorders(0, 0, 0, 0, 1, 1).
-		AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
-		AddText("Dependencies: Enter/Space toggle, 'd' to done. Use filter.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
+    // If metadata is available, populate dropdown options and set server defaults
+    if meta != nil {
+        if len(meta.Types) > 0 {
+            ddProjectType.SetOptions(meta.Types, nil)
+            if meta.DefaultType != "" {
+                setDropDownValue(ddProjectType, meta.Types, meta.DefaultType)
+            } else {
+                setDropDownValue(ddProjectType, meta.Types, o.projectType)
+            }
+        }
+        if len(meta.Languages) > 0 {
+            ddLanguage.SetOptions(meta.Languages, nil)
+            if meta.DefaultLanguage != "" {
+                setDropDownValue(ddLanguage, meta.Languages, meta.DefaultLanguage)
+            } else {
+                setDropDownValue(ddLanguage, meta.Languages, o.language)
+            }
+        }
+        if len(meta.Packagings) > 0 {
+            ddPackaging.SetOptions(meta.Packagings, nil)
+            if meta.DefaultPackaging != "" {
+                setDropDownValue(ddPackaging, meta.Packagings, meta.DefaultPackaging)
+            } else {
+                setDropDownValue(ddPackaging, meta.Packagings, o.packaging)
+            }
+        }
+        if len(meta.BootVersions) > 0 {
+            ddBootVersion.SetOptions(meta.BootVersions, nil)
+            if meta.DefaultBootVersion != "" {
+                setDropDownValue(ddBootVersion, meta.BootVersions, meta.DefaultBootVersion)
+            } else if o.bootVersion != "" {
+                setDropDownValue(ddBootVersion, meta.BootVersions, o.bootVersion)
+            }
+        }
+        if len(meta.JavaVersions) > 0 {
+            ddJavaVersion.SetOptions(meta.JavaVersions, nil)
+            if meta.DefaultJavaVersion != "" {
+                setDropDownValue(ddJavaVersion, meta.JavaVersions, meta.DefaultJavaVersion)
+            } else if o.javaVersion != "" {
+                setDropDownValue(ddJavaVersion, meta.JavaVersions, o.javaVersion)
+            }
+        }
+    }
+
+    // Layout
+    frame := tview.NewFrame(form).
+        SetBorders(0, 0, 0, 0, 1, 1).
+        AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
+        AddText("Dependencies: Enter/Space toggle, 'd' to done. Use filter.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
 
     pages.AddPage("main", frame, true, true)
-
-    // Auto-load metadata in background to populate dropdowns
-    go func() {
-        m, err := fetchClientMetadata(o.baseURL, o.timeout)
-        if err != nil {
-            return
-        }
-        app.QueueUpdateDraw(func() {
-            if len(m.Types) > 0 {
-                ddProjectType.SetOptions(m.Types, nil)
-                setDropDownValue(ddProjectType, m.Types, o.projectType)
-            }
-            if len(m.Languages) > 0 {
-                ddLanguage.SetOptions(m.Languages, nil)
-                setDropDownValue(ddLanguage, m.Languages, o.language)
-            }
-            if len(m.Packagings) > 0 {
-                ddPackaging.SetOptions(m.Packagings, nil)
-                setDropDownValue(ddPackaging, m.Packagings, o.packaging)
-            }
-            if len(m.BootVersions) > 0 {
-                ddBootVersion.SetOptions(m.BootVersions, nil)
-                setDropDownValue(ddBootVersion, m.BootVersions, o.bootVersion)
-            }
-            if len(m.JavaVersions) > 0 {
-                ddJavaVersion.SetOptions(m.JavaVersions, nil)
-                setDropDownValue(ddJavaVersion, m.JavaVersions, o.javaVersion)
-            }
-        })
-    }()
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return err
@@ -310,11 +330,16 @@ type depOption struct {
 
 // clientMeta holds selected lists parsed from /metadata/client
 type clientMeta struct {
-	Types        []string
-	Languages    []string
-	Packagings   []string
-	JavaVersions []string
-	BootVersions []string
+    Types        []string
+    Languages    []string
+    Packagings   []string
+    JavaVersions []string
+    BootVersions []string
+    DefaultType        string
+    DefaultLanguage    string
+    DefaultPackaging   string
+    DefaultJavaVersion string
+    DefaultBootVersion string
 }
 
 // fetchClientMetadata returns lists from /metadata/client for dropdowns and pickers.
@@ -332,39 +357,63 @@ func fetchClientMetadata(baseURL string, timeout int) (*clientMeta, error) {
 		return nil, fmt.Errorf("status %s", resp.Status)
 	}
 
-	var data map[string]json.RawMessage
-	if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-		return nil, err
-	}
-	extractIDs := func(key string) []string {
-		raw, ok := data[key]
-		if !ok {
-			return nil
-		}
-		var sec struct {
-			Values []struct {
-				ID string `json:"id"`
-			} `json:"values"`
-		}
-		if err := json.Unmarshal(raw, &sec); err != nil {
-			return nil
-		}
-		out := make([]string, 0, len(sec.Values))
-		for _, v := range sec.Values {
-			if v.ID != "" {
-				out = append(out, v.ID)
-			}
-		}
-		return out
-	}
-	m := &clientMeta{
-		Types:        extractIDs("type"),
-		Languages:    extractIDs("language"),
-		Packagings:   extractIDs("packaging"),
-		JavaVersions: extractIDs("javaVersion"),
-		BootVersions: extractIDs("bootVersion"),
-	}
-	return m, nil
+    var data map[string]json.RawMessage
+    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+        return nil, err
+    }
+    type valueItem struct {
+        ID      string `json:"id"`
+        Name    string `json:"name"`
+        Default bool   `json:"default"`
+    }
+    type section struct {
+        Default string      `json:"default"`
+        Values  []valueItem `json:"values"`
+    }
+    extractIDs := func(key string) ([]string, string) {
+        raw, ok := data[key]
+        if !ok {
+            return nil, ""
+        }
+        var sec section
+        if err := json.Unmarshal(raw, &sec); err != nil {
+            return nil, ""
+        }
+        out := make([]string, 0, len(sec.Values))
+        for _, v := range sec.Values {
+            if v.ID != "" {
+                out = append(out, v.ID)
+            }
+        }
+        def := sec.Default
+        if def == "" {
+            for _, v := range sec.Values {
+                if v.Default {
+                    def = v.ID
+                    break
+                }
+            }
+        }
+        return out, def
+    }
+    types, defType := extractIDs("type")
+    langs, defLang := extractIDs("language")
+    packs, defPack := extractIDs("packaging")
+    javas, defJava := extractIDs("javaVersion")
+    boots, defBoot := extractIDs("bootVersion")
+    m := &clientMeta{
+        Types:             types,
+        Languages:         langs,
+        Packagings:        packs,
+        JavaVersions:      javas,
+        BootVersions:      boots,
+        DefaultType:        defType,
+        DefaultLanguage:    defLang,
+        DefaultPackaging:   defPack,
+        DefaultJavaVersion: defJava,
+        DefaultBootVersion: defBoot,
+    }
+    return m, nil
 }
 
 func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string, timeout int, selected map[string]bool, catalog map[string]depOption) {

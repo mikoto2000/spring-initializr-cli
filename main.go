@@ -1,17 +1,12 @@
 package main
 
 import (
-	"archive/zip"
-	"errors"
-	"flag"
-	"fmt"
-	"io"
-	"net/http"
-	"net/url"
-	"os"
-	"path/filepath"
-	"strings"
-	"time"
+    "fmt"
+    "io"
+    "net/http"
+    "os"
+    "strings"
+    "time"
 )
 
 const defaultBaseURL = "https://start.spring.io"
@@ -59,7 +54,7 @@ func main() {
 	}
 }
 
-func parseFlags() options {
+/* parseFlags moved to parser.go
 	var o options
 
 	flag.StringVar(&o.baseURL, "base-url", defaultBaseURL, "Spring Initializr base URL")
@@ -134,6 +129,7 @@ func parseFlags() options {
 	return o
 }
 
+*/
 func run(o options) error {
     if o.showVersion {
         fmt.Println(version)
@@ -235,118 +231,4 @@ func applyAction(o options, action string) options {
 	return o
 }
 
-func buildURL(o options) (string, error) {
-	if o.baseURL == "" {
-		return "", errors.New("base-url must not be empty")
-	}
-	base := strings.TrimRight(o.baseURL, "/") + "/starter."
-	switch strings.ToLower(o.target) {
-	case "zip":
-		base += "zip"
-	default:
-		return "", fmt.Errorf("unsupported target: %s", o.target)
-	}
-
-	q := url.Values{}
-	add := func(k, v string) {
-		if strings.TrimSpace(v) != "" {
-			q.Set(k, v)
-		}
-	}
-
-	add("type", o.projectType)
-	add("language", o.language)
-	add("bootVersion", o.bootVersion)
-	add("baseDir", o.baseDir)
-	add("groupId", o.groupID)
-	add("artifactId", o.artifactID)
-	add("name", o.name)
-	add("description", o.description)
-	add("packageName", o.packageName)
-	add("packaging", o.packaging)
-	add("javaVersion", o.javaVersion)
-
-	deps := strings.TrimSpace(o.dependencies)
-	if deps != "" {
-		// normalize: remove whitespace around commas
-		parts := strings.Split(deps, ",")
-		for i := range parts {
-			parts[i] = strings.TrimSpace(parts[i])
-		}
-		q.Set("dependencies", strings.Join(parts, ","))
-	}
-
-	return base + "?" + q.Encode(), nil
-}
-
-func sanitizePackage(s string) string {
-	// Lowercase, replace invalid characters for Java package names
-	s = strings.ToLower(s)
-	// Replace hyphens and spaces with nothing
-	replacer := strings.NewReplacer("-", "", " ", "")
-	s = replacer.Replace(s)
-	// Collapse any accidental double dots
-	for strings.Contains(s, "..") {
-		s = strings.ReplaceAll(s, "..", ".")
-	}
-	// Trim leading/trailing dots
-	s = strings.Trim(s, ".")
-	return s
-}
-
-func saveToFile(r io.Reader, path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && !errors.Is(err, os.ErrExist) {
-		// If path has no directory (current dir), Dir returns "."
-		// MkdirAll(".") is usually a no-op, but just in case, ignore errors where the dir exists.
-	}
-	f, err := os.Create(path)
-	if err != nil {
-		return err
-	}
-	defer f.Close()
-	_, err = io.Copy(f, r)
-	return err
-}
-
-func unzip(zipPath, destDir string) error {
-	zr, err := zip.OpenReader(zipPath)
-	if err != nil {
-		return err
-	}
-	defer zr.Close()
-
-	if err := os.MkdirAll(destDir, 0o755); err != nil {
-		return err
-	}
-
-	for _, f := range zr.File {
-		// Maintain zip internal paths
-		p := filepath.Join(destDir, f.Name)
-		if f.FileInfo().IsDir() {
-			if err := os.MkdirAll(p, f.Mode()); err != nil {
-				return err
-			}
-			continue
-		}
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
-		}
-		rc, err := f.Open()
-		if err != nil {
-			return err
-		}
-		w, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, f.Mode())
-		if err != nil {
-			rc.Close()
-			return err
-		}
-		if _, err := io.Copy(w, rc); err != nil {
-			rc.Close()
-			w.Close()
-			return err
-		}
-		rc.Close()
-		w.Close()
-	}
-	return nil
-}
+// URL construction and helpers moved to url.go; filesystem helpers moved to fs.go

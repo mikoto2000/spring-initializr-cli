@@ -14,11 +14,12 @@ import (
 
 // runInteractive launches a tview-based TUI for editing options and triggering actions.
 func runInteractive(o options) error {
-	app := tview.NewApplication()
+    app := tview.NewApplication()
 
-	pages := tview.NewPages()
+    pages := tview.NewPages()
 
-	var cachedMeta *clientMeta
+    var cachedMeta *clientMeta
+    depCatalog := make(map[string]depOption) // id -> dep info
 
 	// State: selected dependency IDs
 	selectedDeps := make(map[string]bool)
@@ -129,13 +130,23 @@ func runInteractive(o options) error {
 	form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
 
 	// Buttons
-	var postRun func() error // set when Download/Extract is chosen
+    var postRun func() error // set when Download/Extract is chosen
 
-	form.AddButton("Select Dependencies", func() {
-		// fetch and show selector
-		curr := readOptions()
-		showDepsSelector(app, pages, curr.baseURL, curr.timeout, selectedDeps)
-	})
+    form.AddButton("Select Dependencies", func() {
+        // fetch and show selector
+        curr := readOptions()
+        showDepsSelector(app, pages, curr.baseURL, curr.timeout, selectedDeps, depCatalog)
+    })
+    form.AddButton("Show Selected", func() {
+        lines := selectedDisplayLines(selectedDeps, depCatalog)
+        var body string
+        if len(lines) == 0 {
+            body = "(none)"
+        } else {
+            body = strings.Join(lines, "\n")
+        }
+        showTextModal(app, pages, "Selected dependencies", body+"\n\nEsc/Enter to close.", nil)
+    })
 	form.AddButton("Choose Boot Version", func() {
 		curr := readOptions()
 		ensureMeta := func() (*clientMeta, error) {
@@ -275,14 +286,50 @@ func setDropDownValue(dd *tview.DropDown, options []string, val string) {
 }
 
 func joinSelected(m map[string]bool) string {
-	ids := make([]string, 0, len(m))
-	for id, ok := range m {
-		if ok {
-			ids = append(ids, id)
-		}
-	}
-	sort.Strings(ids)
-	return strings.Join(ids, ",")
+    ids := make([]string, 0, len(m))
+    for id, ok := range m {
+        if ok {
+            ids = append(ids, id)
+        }
+    }
+    sort.Strings(ids)
+    return strings.Join(ids, ",")
+}
+
+func selectedIDs(m map[string]bool) []string {
+    ids := make([]string, 0, len(m))
+    for id, ok := range m {
+        if ok {
+            ids = append(ids, id)
+        }
+    }
+    sort.Strings(ids)
+    return ids
+}
+
+// selectedDisplayLines returns lines formatted as "Name (ID) [Group]" if available.
+func selectedDisplayLines(selected map[string]bool, catalog map[string]depOption) []string {
+    ids := selectedIDs(selected)
+    if len(ids) == 0 {
+        return nil
+    }
+    out := make([]string, 0, len(ids))
+    for _, id := range ids {
+        if d, ok := catalog[id]; ok {
+            name := d.Name
+            if name == "" {
+                name = id
+            }
+            if d.Group != "" {
+                out = append(out, fmt.Sprintf("%s (%s) [%s]", name, id, d.Group))
+            } else {
+                out = append(out, fmt.Sprintf("%s (%s)", name, id))
+            }
+        } else {
+            out = append(out, id)
+        }
+    }
+    return out
 }
 
 type depOption struct {
@@ -350,7 +397,7 @@ func fetchClientMetadata(baseURL string, timeout int) (*clientMeta, error) {
 	return m, nil
 }
 
-func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string, timeout int, selected map[string]bool) {
+func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string, timeout int, selected map[string]bool, catalog map[string]depOption) {
 	// Show loading modal while fetching
 	loading := tview.NewModal().SetText("Fetching dependencies...\n(Press Esc to cancel)")
 	loading.AddButtons([]string{"Cancel"}).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
@@ -366,13 +413,20 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
 				showModal(app, pages, fmt.Sprintf("Failed to fetch dependencies:\n%v", err), 8*time.Second, nil)
 				return
 			}
-			// Sort by group then name
-			sort.Slice(deps, func(i, j int) bool {
-				if deps[i].Group == deps[j].Group {
-					return strings.ToLower(deps[i].Name) < strings.ToLower(deps[j].Name)
-				}
-				return strings.ToLower(deps[i].Group) < strings.ToLower(deps[j].Group)
-			})
+            // Sort by group then name
+            sort.Slice(deps, func(i, j int) bool {
+                if deps[i].Group == deps[j].Group {
+                    return strings.ToLower(deps[i].Name) < strings.ToLower(deps[j].Name)
+                }
+                return strings.ToLower(deps[i].Group) < strings.ToLower(deps[j].Group)
+            })
+
+            // Update catalog
+            for _, d := range deps {
+                if d.ID != "" {
+                    catalog[d.ID] = d
+                }
+            }
 
 			// UI: filter input + list
 			filter := tview.NewInputField().SetLabel("Filter: ")

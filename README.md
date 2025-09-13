@@ -1,5 +1,7 @@
 Spring Initializr CLI (Go)
 
+<img width="1886" height="691" alt="image" src="https://github.com/user-attachments/assets/67fac3b1-1960-4dea-8a42-baec1f8398f4" />
+
 Spring Initializr(https://start.spring.io/) をコマンドラインから使いやすくするための軽量 CLI ツールです。指定したオプションから URL を組み立ててプロジェクトをダウンロードし、任意で展開します。
 
 使い方
@@ -30,7 +32,6 @@ TUI の操作（tview ベース）
   - チェックを入れた直後はフィルタを空にして、Filter にフォーカスが戻ります。
 - 「Show Selected」で現在選択している依存を「Name (ID) [Group]」形式で一覧表示。
 - 「Show URL」で生成 URL を表示。「Download」「Download+Extract」で実行。
-- マウス操作にも対応しています。
 
 依存関係の取得
 - TUI は起動時に Spring Initializr のメタデータ（まず `/metadata/client`、次にフォールバックで `/dependencies`）を取得します。

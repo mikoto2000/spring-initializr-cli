@@ -1,0 +1,82 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build and Release
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        goos: [linux, darwin, windows]
+        goarch: [amd64, arm64]
+
+    env:
+      CGO_ENABLED: 0
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify Go
+        run: |
+          go version
+          go env
+
+      - name: Build (${{ matrix.goos }}-${{ matrix.goarch }})
+        id: build
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT_DIR="dist/${{ matrix.goos }}_${{ matrix.goarch }}"
+          mkdir -p "${OUT_DIR}"
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          BIN_NAME="spring-initializr-cli${EXT}"
+          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} CGO_ENABLED=0 \
+            go build -trimpath -ldflags "-s -w" -o "${OUT_DIR}/${BIN_NAME}" .
+          # Include docs/licenses in the archive
+          cp -f README.md LICENSE "${OUT_DIR}/" || true
+
+      - name: Package (${{ matrix.goos }}-${{ matrix.goarch }})
+        id: package
+        shell: bash
+        run: |
+          set -euxo pipefail
+          OUT_DIR="dist/${{ matrix.goos }}_${{ matrix.goarch }}"
+          EXT=""
+          if [ "${{ matrix.goos }}" = "windows" ]; then EXT=".exe"; fi
+          BIN_NAME="spring-initializr-cli${EXT}"
+          ASSET_BASE="spring-initializr-cli_${{ matrix.goos }}_${{ matrix.goarch }}"
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            (cd "${OUT_DIR}" && zip -9 -r "${ASSET_BASE}.zip" "${BIN_NAME}" README.md LICENSE)
+            echo "asset=${OUT_DIR}/${ASSET_BASE}.zip" >> "$GITHUB_OUTPUT"
+          else
+            (cd "${OUT_DIR}" && tar -czf "${ASSET_BASE}.tar.gz" "${BIN_NAME}" README.md LICENSE)
+            echo "asset=${OUT_DIR}/${ASSET_BASE}.tar.gz" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Upload Release
+        uses: softprops/action-gh-release@v2
+        with:
+          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.package.outputs.asset }}
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+

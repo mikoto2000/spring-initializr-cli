@@ -3,7 +3,6 @@ package main
 import (
     "encoding/json"
     "fmt"
-    "io"
     "net/http"
     "sort"
     "strings"
@@ -13,333 +12,446 @@ import (
     "github.com/rivo/tview"
 )
 
-type depItem struct{ ID, Name string }
-type depGroup struct{ Name string; Items []depItem }
-
-// runInteractive implements a TUI using tview, allowing dependency selection from a list.
-func runInteractive(initial options) error {
+// runInteractive launches a tview-based TUI for editing options and triggering actions.
+func runInteractive(o options) error {
     app := tview.NewApplication()
 
-    // Load dependencies asynchronously once UI starts
-    groups := make([]depGroup, 0)
-    selected := make(map[string]bool)
-    depLoadErr := error(nil)
+    pages := tview.NewPages()
 
-    // Copy initial for editing
-    o := initial
+    // State: selected dependency IDs
+    selectedDeps := make(map[string]bool)
+    if strings.TrimSpace(o.dependencies) != "" {
+        for _, id := range strings.Split(o.dependencies, ",") {
+            id = strings.TrimSpace(id)
+            if id != "" {
+                selectedDeps[id] = true
+            }
+        }
+    }
 
-    // Form fields
-    form := tview.NewForm().SetHorizontal(true)
-    form.AddInputField("Base URL", o.baseURL, 0, nil, func(s string) { o.baseURL = s })
-    form.AddDropDown("Type", []string{"maven-project", "gradle-project", "gradle-build"}, indexOf([]string{"maven-project", "gradle-project", "gradle-build"}, o.projectType), func(option string, _ int) { o.projectType = option })
-    form.AddDropDown("Language", []string{"java", "kotlin", "groovy"}, indexOf([]string{"java", "kotlin", "groovy"}, o.language), func(option string, _ int) { o.language = option })
-    form.AddInputField("Boot Version", o.bootVersion, 0, nil, func(s string) { o.bootVersion = s })
-    form.AddInputField("Group ID", o.groupID, 0, nil, func(s string) { o.groupID = s })
-    form.AddInputField("Artifact ID", o.artifactID, 0, nil, func(s string) { o.artifactID = s })
-    form.AddInputField("Name", o.name, 0, nil, func(s string) { o.name = s })
-    form.AddInputField("Description", o.description, 0, nil, func(s string) { o.description = s })
-    form.AddInputField("Package Name", o.packageName, 0, nil, func(s string) { o.packageName = sanitizePackage(s) })
-    form.AddDropDown("Packaging", []string{"jar", "war"}, indexOf([]string{"jar", "war"}, o.packaging), func(option string, _ int) { o.packaging = option })
-    form.AddInputField("Java Version", o.javaVersion, 0, nil, func(s string) { o.javaVersion = s })
-    form.AddCheckbox("Extract", o.extract, func(v bool) { o.extract = v })
-    form.AddCheckbox("Verbose", o.verbose, func(v bool) { o.verbose = v })
+    // Widgets
+    form := tview.NewForm()
+    form.SetBorder(true).SetTitle(" Spring Initializr CLI ")
+    form.SetButtonsAlign(tview.AlignRight)
+    form.SetItemPadding(1)
+
+    // DropDown helpers
+    projectTypes := []string{"maven-project", "gradle-project", "gradle-build"}
+    languages := []string{"java", "kotlin", "groovy"}
+    packagings := []string{"jar", "war"}
+
+    ddProjectType := tview.NewDropDown().SetOptions(projectTypes, nil)
+    ddLanguage := tview.NewDropDown().SetOptions(languages, nil)
+    ddPackaging := tview.NewDropDown().SetOptions(packagings, nil)
+
+    // Set initial selections
+    setDropDownValue(ddProjectType, projectTypes, o.projectType)
+    setDropDownValue(ddLanguage, languages, o.language)
+    setDropDownValue(ddPackaging, packagings, o.packaging)
+
+    inBootVersion := tview.NewInputField().SetText(o.bootVersion)
+    inGroupID := tview.NewInputField().SetText(o.groupID)
+    inArtifactID := tview.NewInputField().SetText(o.artifactID)
+    inName := tview.NewInputField().SetText(o.name)
+    inDescription := tview.NewInputField().SetText(o.description)
+    inPackageName := tview.NewInputField().SetText(o.packageName)
+    inJavaVersion := tview.NewInputField().SetText(o.javaVersion)
+    inBaseDir := tview.NewInputField().SetText(o.baseDir)
+    inOutput := tview.NewInputField().SetText(o.output)
+    inBaseURL := tview.NewInputField().SetText(o.baseURL)
+
+    // Small helper to pull current form values into options
+    readOptions := func() options {
+        // DropDowns
+        if _, v := ddProjectType.GetCurrentOption(); v != "" {
+            o.projectType = v
+        }
+        if _, v := ddLanguage.GetCurrentOption(); v != "" {
+            o.language = v
+        }
+        if _, v := ddPackaging.GetCurrentOption(); v != "" {
+            o.packaging = v
+        }
+        // Inputs
+        o.bootVersion = strings.TrimSpace(inBootVersion.GetText())
+        o.groupID = strings.TrimSpace(inGroupID.GetText())
+        o.artifactID = strings.TrimSpace(inArtifactID.GetText())
+        o.name = strings.TrimSpace(inName.GetText())
+        o.description = strings.TrimSpace(inDescription.GetText())
+        o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
+        o.javaVersion = strings.TrimSpace(inJavaVersion.GetText())
+        o.baseDir = strings.TrimSpace(inBaseDir.GetText())
+        o.output = strings.TrimSpace(inOutput.GetText())
+        o.baseURL = strings.TrimSpace(inBaseURL.GetText())
+        // Dependencies
+        o.dependencies = joinSelected(selectedDeps)
+
+        // Derived defaults if empty
+        if o.baseDir == "" {
+            o.baseDir = o.artifactID
+        }
+        if o.packageName == "" {
+            o.packageName = sanitizePackage(o.groupID + "." + o.artifactID)
+        }
+        if o.output == "" {
+            o.output = o.artifactID + ".zip"
+        }
+        return o
+    }
+
+    // Build form items
+    form.AddFormItem(labeled(ddProjectType, "Project Type"))
+    form.AddFormItem(labeled(ddLanguage, "Language"))
+    form.AddInputField("Boot Version", o.bootVersion, 0, nil, nil)
+    form.AddInputField("Group ID", o.groupID, 0, nil, nil)
+    form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
+    form.AddInputField("Name", o.name, 0, nil, nil)
+    form.AddInputField("Description", o.description, 0, nil, nil)
+    form.AddFormItem(labeled(ddPackaging, "Packaging"))
+    form.AddInputField("Java Version", o.javaVersion, 0, nil, nil)
+    form.AddInputField("Package Name", o.packageName, 0, nil, nil)
+    form.AddInputField("Base Dir", o.baseDir, 0, nil, nil)
+    form.AddInputField("Output Zip", o.output, 0, nil, nil)
+    form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
+
+    // Hook form items to variables so readOptions sees updated values
+    form.GetFormItem(2).(*tview.InputField).SetChangedFunc(func(t string) { inBootVersion.SetText(t) })
+    form.GetFormItem(3).(*tview.InputField).SetChangedFunc(func(t string) { inGroupID.SetText(t) })
+    form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) { inArtifactID.SetText(t) })
+    form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
+    form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
+    form.GetFormItem(8).(*tview.InputField).SetChangedFunc(func(t string) { inJavaVersion.SetText(t) })
+    form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) { inPackageName.SetText(t) })
+    form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseDir.SetText(t) })
+    form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
+    form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
 
     // Buttons
-    var pages *tview.Pages
-    showMessage := func(title, msg string) {
-        modal := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).SetDoneFunc(func(i int, l string) {
-            pages.RemovePage("modal")
-        })
-        pages.AddPage("modal", modal, true, true)
-    }
-
-    // Dependency picker
-    pickDependencies := func() {
-        list := tview.NewList()
-        list.SetBorder(true).SetTitle("Dependencies (Enter: toggle, d: done)")
-        list.ShowSecondaryText(false)
-
-        // helper to render
-        var refresh func(filter string)
-        refresh = func(filter string) {
-            list.Clear()
-            if len(groups) == 0 && depLoadErr == nil {
-                list.AddItem("Loading...", "", 0, nil)
-                return
-            }
-            if len(groups) == 0 && depLoadErr != nil {
-                // fallback to built-in defaults
-                groups = defaultDepGroups()
-            }
-            for _, g := range groups {
-                matched := make([]depItem, 0)
-                for _, d := range g.Items {
-                    if filter != "" && !strings.Contains(strings.ToLower(d.Name+" "+d.ID), strings.ToLower(filter)) {
-                        continue
-                    }
-                    matched = append(matched, d)
-                }
-                if len(matched) == 0 { continue }
-                list.AddItem("-- "+g.Name+" --", "", 0, nil)
-                for _, d := range matched {
-                    label := fmt.Sprintf("[%s] %s (%s)", boolToX(selected[d.ID]), d.Name, d.ID)
-                    id := d.ID
-                    list.AddItem(label, "", 0, func() {
-                        selected[id] = !selected[id]
-                        refresh(filter)
-                    })
-                }
-            }
-        }
-
-        input := tview.NewInputField().SetLabel("Filter: ")
-        input.SetChangedFunc(func(text string) { refresh(text) })
-
-        flex := tview.NewFlex().SetDirection(tview.FlexRow).
-            AddItem(input, 1, 0, true).
-            AddItem(list, 0, 1, false)
-
-        // keybindings
-        list.SetDoneFunc(func() { pages.RemovePage("picker") })
-        flex.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-            if ev.Key() == tcell.KeyRune && (ev.Rune() == 'd' || ev.Rune() == 'D') {
-                pages.RemovePage("picker")
-                return nil
-            }
-            return ev
-        })
-
-        pages.AddPage("picker", tview.NewFrame(flex).SetBorders(0, 0, 0, 0, 0, 0).SetBorder(true).SetTitle("Select Dependencies"), true, true)
-        refresh("")
-        app.SetFocus(input)
-    }
+    var postRun func() error // set when Download/Extract is chosen
 
     form.AddButton("Select Dependencies", func() {
-        if len(groups) == 0 && depLoadErr != nil {
-            showMessage("Error", fmt.Sprintf("Failed to load dependencies: %v", depLoadErr))
-            return
-        }
-        pickDependencies()
+        // fetch and show selector
+        curr := readOptions()
+        showDepsSelector(app, pages, curr.baseURL, curr.timeout, selectedDeps)
     })
     form.AddButton("Show URL", func() {
-        // derive dependent fields
-        if o.baseDir == "" { o.baseDir = o.artifactID }
-        if o.packageName == "" { o.packageName = sanitizePackage(o.groupID+"."+o.artifactID) }
-        o.dependencies = selectedIDsCSV(selected)
-        u, err := buildURL(o)
-        if err != nil {
-            showMessage("Error", err.Error())
-            return
+        curr := readOptions()
+        if u, err := buildURL(curr); err != nil {
+            showModal(app, pages, fmt.Sprintf("Error: %v", err), 60*time.Second, nil)
+        } else {
+            showTextModal(app, pages, "Generated URL", u+"\n\nPress Esc or Enter to close.", nil)
         }
-        showMessage("URL", u)
     })
     form.AddButton("Download", func() {
-        o.dependencies = selectedIDsCSV(selected)
-        go func() {
-            err := run(applyAction(o, "download"))
-            app.QueueUpdateDraw(func() {
-                if err != nil {
-                    showMessage("Error", err.Error())
-                } else {
-                    showMessage("Done", "Downloaded successfully")
-                }
-            })
-        }()
+        curr := readOptions()
+        curr.dryRun = false
+        curr.extract = false
+        curr.interactive = false
+        postRun = func() error { return run(curr) }
+        app.Stop()
     })
     form.AddButton("Download+Extract", func() {
-        o.extract = true
-        o.dependencies = selectedIDsCSV(selected)
-        go func() {
-            err := run(applyAction(o, "extract"))
-            app.QueueUpdateDraw(func() {
-                if err != nil {
-                    showMessage("Error", err.Error())
-                } else {
-                    showMessage("Done", "Extracted successfully")
-                }
-            })
-        }()
+        curr := readOptions()
+        curr.dryRun = false
+        curr.extract = true
+        curr.interactive = false
+        postRun = func() error { return run(curr) }
+        app.Stop()
     })
     form.AddButton("Quit", func() { app.Stop() })
 
-    form.SetBorder(true).SetTitle("Spring Initializr - TUI")
+    // Layout
+    frame := tview.NewFrame(form).
+        SetBorders(0, 0, 0, 0, 1, 1).
+        AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
+        AddText("Select Dependencies: Enter/Space to toggle, 'd' to done.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
 
-    pages = tview.NewPages().AddPage("main", form, true, true)
-
-    // Start dependency load after UI starts
-    go func(baseURL, bootVersion string) {
-        list, err := fetchDependencyGroups(baseURL, bootVersion)
-        if err != nil {
-            depLoadErr = err
-        } else {
-            groups = list
-        }
-        // preserve previously typed CSV in initial options
-        if strings.TrimSpace(initial.dependencies) != "" {
-            for _, id := range strings.Split(initial.dependencies, ",") {
-                selected[strings.TrimSpace(id)] = true
-            }
-        }
-        app.QueueUpdateDraw(func() {})
-    }(o.baseURL, o.bootVersion)
+    pages.AddPage("main", frame, true, true)
 
     if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
         return err
     }
+    if postRun != nil {
+        return postRun()
+    }
     return nil
 }
 
-func boolToX(b bool) string { if b { return "x" } ; return " " }
-
-func indexOf(slice []string, v string) int {
-    for i, s := range slice { if s == v { return i } }
-    return 0
+// labeled wraps a form item with a label since DropDown lacks SetLabel in older tview.
+func labeled(item tview.FormItem, label string) tview.FormItem {
+    switch it := item.(type) {
+    case *tview.DropDown:
+        it.SetLabel(label + ": ")
+    default:
+        // pass-through
+    }
+    return item
 }
 
-func selectedIDsCSV(m map[string]bool) string {
+func setDropDownValue(dd *tview.DropDown, options []string, val string) {
+    idx := 0
+    for i, v := range options {
+        if strings.EqualFold(v, val) {
+            idx = i
+            break
+        }
+    }
+    dd.SetCurrentOption(idx)
+}
+
+func joinSelected(m map[string]bool) string {
     ids := make([]string, 0, len(m))
-    for id, ok := range m { if ok { ids = append(ids, id) } }
+    for id, ok := range m {
+        if ok {
+            ids = append(ids, id)
+        }
+    }
     sort.Strings(ids)
     return strings.Join(ids, ",")
 }
 
-// fetchDependencyGroups loads dependency groups from Initializr.
-// It prefers /metadata/client (which includes groups). If unavailable, falls back
-// to /dependencies and wraps the flat list into a single "All" group.
-func fetchDependencyGroups(baseURL, bootVersion string) ([]depGroup, error) {
-    client := &http.Client{ Timeout: 15 * time.Second }
+type depOption struct {
+    ID    string
+    Name  string
+    Group string
+}
+
+func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string, timeout int, selected map[string]bool) {
+    // Show loading modal while fetching
+    loading := tview.NewModal().SetText("Fetching dependencies...\n(Press Esc to cancel)")
+    loading.AddButtons([]string{"Cancel"}).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+        pages.RemovePage("loading")
+    })
+    pages.AddPage("loading", loading, true, true)
+
+    go func() {
+        deps, err := fetchDependencies(baseURL, timeout)
+        app.QueueUpdateDraw(func() {
+            pages.RemovePage("loading")
+            if err != nil {
+                showModal(app, pages, fmt.Sprintf("Failed to fetch dependencies:\n%v", err), 8*time.Second, nil)
+                return
+            }
+            // Build list
+            list := tview.NewList()
+            list.SetBorder(true).SetTitle(" Select Dependencies (Enter/Space: toggle, d: done) ")
+            // Sort by group then name
+            sort.Slice(deps, func(i, j int) bool {
+                if deps[i].Group == deps[j].Group {
+                    return strings.ToLower(deps[i].Name) < strings.ToLower(deps[j].Name)
+                }
+                return strings.ToLower(deps[i].Group) < strings.ToLower(deps[j].Group)
+            })
+            for _, d := range deps {
+                checked := selected[d.ID]
+                main := depLabel(d, checked)
+                list.AddItem(main, "", 0, nil)
+            }
+            list.SetDoneFunc(func() {
+                // default done on ESC
+                pages.RemovePage("deps")
+                app.SetFocus(pages)
+            })
+            list.SetSelectedFunc(func(i int, mainText, secondaryText string, shortcut rune) {
+                if i >= 0 && i < len(deps) {
+                    d := deps[i]
+                    selected[d.ID] = !selected[d.ID]
+                    list.SetItemText(i, depLabel(d, selected[d.ID]), "")
+                }
+            })
+            list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+                switch ev.Rune() {
+                case 'd', 'D':
+                    pages.RemovePage("deps")
+                    return nil
+                case ' ': // Space toggles
+                    if i := list.GetCurrentItem(); i >= 0 && i < len(deps) {
+                        d := deps[i]
+                        selected[d.ID] = !selected[d.ID]
+                        list.SetItemText(i, depLabel(d, selected[d.ID]), "")
+                        return nil
+                    }
+                }
+                return ev
+            })
+
+            // Show in pages
+            pages.AddPage("deps", centered(list, 0.8, 0.9), true, true)
+            app.SetFocus(list)
+        })
+    }()
+}
+
+func depLabel(d depOption, checked bool) string {
+    mark := "☐"
+    if checked {
+        mark = "☑"
+    }
+    grp := d.Group
+    if grp != "" {
+        grp = " [" + grp + "]"
+    }
+    return fmt.Sprintf("%s %s (%s)%s", mark, d.Name, d.ID, grp)
+}
+
+func centered(p tview.Primitive, widthPct, heightPct float64) tview.Primitive {
+    grid := tview.NewGrid().
+        SetColumns(0, int(widthPct*100), 0).
+        SetRows(0, int(heightPct*100), 0).
+        SetBorders(false)
+    grid.AddItem(p, 1, 1, 1, 1, 0, 0, true)
+    return grid
+}
+
+func showModal(app *tview.Application, pages *tview.Pages, msg string, autoClose time.Duration, onClose func()) {
+    modal := tview.NewModal().SetText(msg).AddButtons([]string{"OK"}).SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+        pages.RemovePage("modal")
+        if onClose != nil {
+            onClose()
+        }
+    })
+    pages.AddPage("modal", centered(modal, 0.5, 0.4), true, true)
+    if autoClose > 0 {
+        time.AfterFunc(autoClose, func() {
+            app.QueueUpdateDraw(func() {
+                pages.RemovePage("modal")
+                if onClose != nil {
+                    onClose()
+                }
+            })
+        })
+    }
+}
+
+func showTextModal(app *tview.Application, pages *tview.Pages, title, text string, onClose func()) {
+    tv := tview.NewTextView().SetText(text).SetScrollable(true)
+    tv.SetBorder(true).SetTitle(" " + title + " ")
+    frame := tview.NewFrame(tv).
+        AddText("Esc/Enter to close", true, tview.AlignCenter, tview.Styles.SecondaryTextColor)
+    pages.AddPage("text", centered(frame, 0.8, 0.8), true, true)
+    tv.SetDoneFunc(func(key tcell.Key) {
+        pages.RemovePage("text")
+        if onClose != nil {
+            onClose()
+        }
+    })
+    tv.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+        switch ev.Key() {
+        case tcell.KeyEsc, tcell.KeyEnter:
+            pages.RemovePage("text")
+            if onClose != nil {
+                onClose()
+            }
+            return nil
+        }
+        return ev
+    })
+}
+
+// Fetch dependencies from Initializr metadata endpoints, tolerating schema variants.
+func fetchDependencies(baseURL string, timeout int) ([]depOption, error) {
+    client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
     base := strings.TrimRight(baseURL, "/")
 
-    if groups, err := fetchGroupsFromClientMetadata(client, base); err == nil && len(groups) > 0 {
-        return groups, nil
+    // Try /metadata/client first
+    if deps, err := fetchFromMetadataClient(client, base+"/metadata/client"); err == nil && len(deps) > 0 {
+        return deps, nil
     }
-    if flat, err := fetchFromDependencies(client, base, bootVersion); err == nil && len(flat) > 0 {
-        g := depGroup{ Name: "All" }
-        for _, f := range flat {
-            g.Items = append(g.Items, depItem{ID: f.ID, Name: f.Name})
-        }
-        return []depGroup{ g }, nil
+    // Fallback to /dependencies
+    if deps, err := fetchFromDependencies(client, base+"/dependencies"); err == nil && len(deps) > 0 {
+        return deps, nil
+    } else if err != nil {
+        return nil, err
     }
-    return nil, fmt.Errorf("failed to load dependencies from %s", baseURL)
+    return nil, fmt.Errorf("no dependencies found from %s", base)
 }
 
-func fetchFromClientMetadata(client *http.Client, base string) ([]struct{ ID, Name string }, error) {
-    req, _ := http.NewRequest(http.MethodGet, base+"/metadata/client", nil)
+func fetchFromMetadataClient(client *http.Client, url string) ([]depOption, error) {
+    req, _ := http.NewRequest(http.MethodGet, url, nil)
     req.Header.Set("Accept", "application/json")
     resp, err := client.Do(req)
-    if err != nil { return nil, err }
+    if err != nil {
+        return nil, err
+    }
     defer resp.Body.Close()
-    if resp.StatusCode/100 != 2 { io.Copy(io.Discard, resp.Body); return nil, fmt.Errorf("status %s", resp.Status) }
-    var data struct{
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return nil, fmt.Errorf("status %s", resp.Status)
+    }
+    var data struct {
         Dependencies struct {
-            Values []struct{
-                Name string `json:"name"`
-                Values []struct{
-                    ID string `json:"id"`
-                    Name string `json:"name"`
-                } `json:"values"`
+            Values []struct {
+                Name   string          `json:"name"`
+                Values []json.RawMessage `json:"values"`
             } `json:"values"`
         } `json:"dependencies"`
     }
-    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
-    out := make([]struct{ID, Name string}, 0)
-    for _, grp := range data.Dependencies.Values {
-        for _, v := range grp.Values {
-            out = append(out, struct{ID, Name string}{ID: v.ID, Name: v.Name})
-        }
+    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
+        return nil, err
     }
-    sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
-    return out, nil
-}
-
-func fetchGroupsFromClientMetadata(client *http.Client, base string) ([]depGroup, error) {
-    req, _ := http.NewRequest(http.MethodGet, base+"/metadata/client", nil)
-    req.Header.Set("Accept", "application/json")
-    resp, err := client.Do(req)
-    if err != nil { return nil, err }
-    defer resp.Body.Close()
-    if resp.StatusCode/100 != 2 { io.Copy(io.Discard, resp.Body); return nil, fmt.Errorf("status %s", resp.Status) }
-    var data struct{
-        Dependencies struct {
-            Values []struct{
+    var out []depOption
+    for _, grp := range data.Dependencies.Values {
+        gname := grp.Name
+        for _, raw := range grp.Values {
+            var item struct {
+                ID   string `json:"id"`
                 Name string `json:"name"`
-                Values []struct{
-                    ID string `json:"id"`
-                    Name string `json:"name"`
-                } `json:"values"`
-            } `json:"values"`
-        } `json:"dependencies"`
-    }
-    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
-    groups := make([]depGroup, 0, len(data.Dependencies.Values))
-    for _, grp := range data.Dependencies.Values {
-        g := depGroup{ Name: grp.Name }
-        for _, v := range grp.Values {
-            g.Items = append(g.Items, depItem{ ID: v.ID, Name: v.Name })
+            }
+            if err := json.Unmarshal(raw, &item); err == nil && item.ID != "" {
+                out = append(out, depOption{ID: item.ID, Name: item.Name, Group: gname})
+            }
         }
-        sort.Slice(g.Items, func(i, j int) bool { return g.Items[i].Name < g.Items[j].Name })
-        groups = append(groups, g)
     }
-    sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
-    return groups, nil
-}
-
-// defaultDepGroups provides a minimal offline list for when metadata cannot be fetched.
-func defaultDepGroups() []depGroup {
-    return []depGroup{
-        { Name: "Web", Items: []depItem{
-            {ID: "web", Name: "Spring Web"},
-            {ID: "webflux", Name: "Spring Reactive Web"},
-            {ID: "thymeleaf", Name: "Thymeleaf"},
-            {ID: "mustache", Name: "Mustache"},
-        }},
-        { Name: "Data", Items: []depItem{
-            {ID: "data-jpa", Name: "Spring Data JPA"},
-            {ID: "data-mongodb", Name: "Spring Data MongoDB"},
-            {ID: "jdbc", Name: "JDBC"},
-            {ID: "r2dbc", Name: "R2DBC"},
-        }},
-        { Name: "Databases", Items: []depItem{
-            {ID: "mysql", Name: "MySQL Driver"},
-            {ID: "postgresql", Name: "PostgreSQL Driver"},
-            {ID: "h2", Name: "H2 Database"},
-            {ID: "flyway", Name: "Flyway"},
-            {ID: "liquibase", Name: "Liquibase"},
-        }},
-        { Name: "Core", Items: []depItem{
-            {ID: "validation", Name: "Validation"},
-            {ID: "security", Name: "Spring Security"},
-            {ID: "actuator", Name: "Spring Boot Actuator"},
-            {ID: "lombok", Name: "Lombok"},
-            {ID: "devtools", Name: "Spring Boot DevTools"},
-        }},
-        { Name: "Testing", Items: []depItem{
-            {ID: "testcontainers", Name: "Testcontainers"},
-        }},
-    }
-}
-
-func fetchFromDependencies(client *http.Client, base, bootVersion string) ([]struct{ ID, Name string }, error) {
-    u := base + "/dependencies"
-    if strings.TrimSpace(bootVersion) != "" {
-        u += "?bootVersion=" + urlQueryEscape(bootVersion)
-    }
-    req, _ := http.NewRequest(http.MethodGet, u, nil)
-    req.Header.Set("Accept", "application/json")
-    resp, err := client.Do(req)
-    if err != nil { return nil, err }
-    defer resp.Body.Close()
-    if resp.StatusCode/100 != 2 { io.Copy(io.Discard, resp.Body); return nil, fmt.Errorf("status %s", resp.Status) }
-    var data struct{ Dependencies []struct{ ID, Name string } `json:"dependencies"` }
-    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
-    out := make([]struct{ID, Name string}, 0, len(data.Dependencies))
-    for _, d := range data.Dependencies { out = append(out, struct{ID, Name string}{ID: d.ID, Name: d.Name}) }
-    sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
     return out, nil
 }
 
-func urlQueryEscape(s string) string {
-    // local tiny escape to avoid importing net/url here; main already imports but keep file cohesive
-    repl := strings.NewReplacer(" ", "+")
-    return repl.Replace(s)
+func fetchFromDependencies(client *http.Client, url string) ([]depOption, error) {
+    req, _ := http.NewRequest(http.MethodGet, url, nil)
+    req.Header.Set("Accept", "application/json")
+    resp, err := client.Do(req)
+    if err != nil {
+        return nil, err
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+        return nil, fmt.Errorf("status %s", resp.Status)
+    }
+
+    // tolerate both {groups:[{name,values:[{id,name}]}]} and {dependencies:[{id,name,group}]}
+    var raw map[string]json.RawMessage
+    if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
+        return nil, err
+    }
+    if graw, ok := raw["groups"]; ok {
+        var groups []struct {
+            Name   string `json:"name"`
+            Values []struct {
+                ID   string `json:"id"`
+                Name string `json:"name"`
+            } `json:"values"`
+        }
+        if err := json.Unmarshal(graw, &groups); err == nil {
+            var out []depOption
+            for _, g := range groups {
+                for _, v := range g.Values {
+                    out = append(out, depOption{ID: v.ID, Name: v.Name, Group: g.Name})
+                }
+            }
+            return out, nil
+        }
+    }
+    if draw, ok := raw["dependencies"]; ok {
+        var deps []struct {
+            ID    string `json:"id"`
+            Name  string `json:"name"`
+            Group string `json:"group"`
+        }
+        if err := json.Unmarshal(draw, &deps); err == nil {
+            out := make([]depOption, 0, len(deps))
+            for _, d := range deps {
+                out = append(out, depOption{ID: d.ID, Name: d.Name, Group: d.Group})
+            }
+            return out, nil
+        }
+    }
+    return nil, fmt.Errorf("unsupported dependencies schema")
 }

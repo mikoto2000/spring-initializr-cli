@@ -13,12 +13,15 @@ import (
     "github.com/rivo/tview"
 )
 
+type depItem struct{ ID, Name string }
+type depGroup struct{ Name string; Items []depItem }
+
 // runInteractive implements a TUI using tview, allowing dependency selection from a list.
 func runInteractive(initial options) error {
     app := tview.NewApplication()
 
     // Load dependencies asynchronously once UI starts
-    deps := make([]struct{ID, Name string}, 0)
+    groups := make([]depGroup, 0)
     selected := make(map[string]bool)
     depLoadErr := error(nil)
 
@@ -60,16 +63,32 @@ func runInteractive(initial options) error {
         var refresh func(filter string)
         refresh = func(filter string) {
             list.Clear()
-            for _, d := range deps {
-                if filter != "" && !strings.Contains(strings.ToLower(d.Name+" "+d.ID), strings.ToLower(filter)) {
-                    continue
+            if len(groups) == 0 && depLoadErr == nil {
+                list.AddItem("Loading...", "", 0, nil)
+                return
+            }
+            if len(groups) == 0 && depLoadErr != nil {
+                // fallback to built-in defaults
+                groups = defaultDepGroups()
+            }
+            for _, g := range groups {
+                matched := make([]depItem, 0)
+                for _, d := range g.Items {
+                    if filter != "" && !strings.Contains(strings.ToLower(d.Name+" "+d.ID), strings.ToLower(filter)) {
+                        continue
+                    }
+                    matched = append(matched, d)
                 }
-                label := fmt.Sprintf("[%s] %s (%s)", boolToX(selected[d.ID]), d.Name, d.ID)
-                id := d.ID
-                list.AddItem(label, "", 0, func() {
-                    selected[id] = !selected[id]
-                    refresh(filter)
-                })
+                if len(matched) == 0 { continue }
+                list.AddItem("-- "+g.Name+" --", "", 0, nil)
+                for _, d := range matched {
+                    label := fmt.Sprintf("[%s] %s (%s)", boolToX(selected[d.ID]), d.Name, d.ID)
+                    id := d.ID
+                    list.AddItem(label, "", 0, func() {
+                        selected[id] = !selected[id]
+                        refresh(filter)
+                    })
+                }
             }
         }
 
@@ -96,7 +115,7 @@ func runInteractive(initial options) error {
     }
 
     form.AddButton("Select Dependencies", func() {
-        if len(deps) == 0 && depLoadErr != nil {
+        if len(groups) == 0 && depLoadErr != nil {
             showMessage("Error", fmt.Sprintf("Failed to load dependencies: %v", depLoadErr))
             return
         }
@@ -149,12 +168,12 @@ func runInteractive(initial options) error {
 
     // Start dependency load after UI starts
     go func(baseURL, bootVersion string) {
-        list, err := fetchDependencyList(baseURL, bootVersion)
+        list, err := fetchDependencyGroups(baseURL, bootVersion)
         if err != nil {
             depLoadErr = err
-            return
+        } else {
+            groups = list
         }
-        deps = list
         // preserve previously typed CSV in initial options
         if strings.TrimSpace(initial.dependencies) != "" {
             for _, id := range strings.Split(initial.dependencies, ",") {
@@ -184,19 +203,22 @@ func selectedIDsCSV(m map[string]bool) string {
     return strings.Join(ids, ",")
 }
 
-// fetchDependencyList attempts to load dependencies from Initializr using
-// two possible endpoints and shapes, being tolerant to variations.
-func fetchDependencyList(baseURL, bootVersion string) ([]struct{ ID, Name string }, error) {
+// fetchDependencyGroups loads dependency groups from Initializr.
+// It prefers /metadata/client (which includes groups). If unavailable, falls back
+// to /dependencies and wraps the flat list into a single "All" group.
+func fetchDependencyGroups(baseURL, bootVersion string) ([]depGroup, error) {
     client := &http.Client{ Timeout: 15 * time.Second }
     base := strings.TrimRight(baseURL, "/")
 
-    // Try /metadata/client first
-    if list, err := fetchFromClientMetadata(client, base); err == nil && len(list) > 0 {
-        return list, nil
+    if groups, err := fetchGroupsFromClientMetadata(client, base); err == nil && len(groups) > 0 {
+        return groups, nil
     }
-    // Fallback: /dependencies (optionally with bootVersion)
-    if list, err := fetchFromDependencies(client, base, bootVersion); err == nil && len(list) > 0 {
-        return list, nil
+    if flat, err := fetchFromDependencies(client, base, bootVersion); err == nil && len(flat) > 0 {
+        g := depGroup{ Name: "All" }
+        for _, f := range flat {
+            g.Items = append(g.Items, depItem{ID: f.ID, Name: f.Name})
+        }
+        return []depGroup{ g }, nil
     }
     return nil, fmt.Errorf("failed to load dependencies from %s", baseURL)
 }
@@ -228,6 +250,73 @@ func fetchFromClientMetadata(client *http.Client, base string) ([]struct{ ID, Na
     }
     sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
     return out, nil
+}
+
+func fetchGroupsFromClientMetadata(client *http.Client, base string) ([]depGroup, error) {
+    req, _ := http.NewRequest(http.MethodGet, base+"/metadata/client", nil)
+    req.Header.Set("Accept", "application/json")
+    resp, err := client.Do(req)
+    if err != nil { return nil, err }
+    defer resp.Body.Close()
+    if resp.StatusCode/100 != 2 { io.Copy(io.Discard, resp.Body); return nil, fmt.Errorf("status %s", resp.Status) }
+    var data struct{
+        Dependencies struct {
+            Values []struct{
+                Name string `json:"name"`
+                Values []struct{
+                    ID string `json:"id"`
+                    Name string `json:"name"`
+                } `json:"values"`
+            } `json:"values"`
+        } `json:"dependencies"`
+    }
+    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil { return nil, err }
+    groups := make([]depGroup, 0, len(data.Dependencies.Values))
+    for _, grp := range data.Dependencies.Values {
+        g := depGroup{ Name: grp.Name }
+        for _, v := range grp.Values {
+            g.Items = append(g.Items, depItem{ ID: v.ID, Name: v.Name })
+        }
+        sort.Slice(g.Items, func(i, j int) bool { return g.Items[i].Name < g.Items[j].Name })
+        groups = append(groups, g)
+    }
+    sort.Slice(groups, func(i, j int) bool { return groups[i].Name < groups[j].Name })
+    return groups, nil
+}
+
+// defaultDepGroups provides a minimal offline list for when metadata cannot be fetched.
+func defaultDepGroups() []depGroup {
+    return []depGroup{
+        { Name: "Web", Items: []depItem{
+            {ID: "web", Name: "Spring Web"},
+            {ID: "webflux", Name: "Spring Reactive Web"},
+            {ID: "thymeleaf", Name: "Thymeleaf"},
+            {ID: "mustache", Name: "Mustache"},
+        }},
+        { Name: "Data", Items: []depItem{
+            {ID: "data-jpa", Name: "Spring Data JPA"},
+            {ID: "data-mongodb", Name: "Spring Data MongoDB"},
+            {ID: "jdbc", Name: "JDBC"},
+            {ID: "r2dbc", Name: "R2DBC"},
+        }},
+        { Name: "Databases", Items: []depItem{
+            {ID: "mysql", Name: "MySQL Driver"},
+            {ID: "postgresql", Name: "PostgreSQL Driver"},
+            {ID: "h2", Name: "H2 Database"},
+            {ID: "flyway", Name: "Flyway"},
+            {ID: "liquibase", Name: "Liquibase"},
+        }},
+        { Name: "Core", Items: []depItem{
+            {ID: "validation", Name: "Validation"},
+            {ID: "security", Name: "Spring Security"},
+            {ID: "actuator", Name: "Spring Boot Actuator"},
+            {ID: "lombok", Name: "Lombok"},
+            {ID: "devtools", Name: "Spring Boot DevTools"},
+        }},
+        { Name: "Testing", Items: []depItem{
+            {ID: "testcontainers", Name: "Testcontainers"},
+        }},
+    }
 }
 
 func fetchFromDependencies(client *http.Client, base, bootVersion string) ([]struct{ ID, Name string }, error) {

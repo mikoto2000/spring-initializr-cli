@@ -1,0 +1,33 @@
+# Go build artifacts
+spring-initializr-cli
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+
+# Build outputs
+dist/
+build/
+bin/
+
+# Go caches (kept in repo workspace here)
+.gocache/
+.gopath/
+
+# Archives
+*.zip
+*.tar
+*.tar.gz
+
+# Editor/IDE
+.vscode/
+.idea/
+*.swp
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

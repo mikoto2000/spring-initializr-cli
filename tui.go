@@ -52,7 +52,7 @@ func runInteractive(o options) error {
 	setDropDownValue(ddLanguage, languages, o.language)
 	setDropDownValue(ddPackaging, packagings, o.packaging)
 
-	inBootVersion := tview.NewInputField().SetText(o.bootVersion)
+    ddBootVersion := tview.NewDropDown()
 	inGroupID := tview.NewInputField().SetText(o.groupID)
 	inArtifactID := tview.NewInputField().SetText(o.artifactID)
 	inName := tview.NewInputField().SetText(o.name)
@@ -72,12 +72,14 @@ func runInteractive(o options) error {
 		if _, v := ddLanguage.GetCurrentOption(); v != "" {
 			o.language = v
 		}
-		if _, v := ddPackaging.GetCurrentOption(); v != "" {
-			o.packaging = v
-		}
-		// Inputs
-		o.bootVersion = strings.TrimSpace(inBootVersion.GetText())
-		o.groupID = strings.TrimSpace(inGroupID.GetText())
+        if _, v := ddPackaging.GetCurrentOption(); v != "" {
+            o.packaging = v
+        }
+        if _, v := ddBootVersion.GetCurrentOption(); v != "" {
+            o.bootVersion = v
+        }
+        // Inputs
+        o.groupID = strings.TrimSpace(inGroupID.GetText())
 		o.artifactID = strings.TrimSpace(inArtifactID.GetText())
 		o.name = strings.TrimSpace(inName.GetText())
 		o.description = strings.TrimSpace(inDescription.GetText())
@@ -105,7 +107,12 @@ func runInteractive(o options) error {
 	// Build form items
 	form.AddFormItem(labeled(ddProjectType, "Project Type"))
 	form.AddFormItem(labeled(ddLanguage, "Language"))
-	form.AddInputField("Boot Version", o.bootVersion, 0, nil, nil)
+    // Boot Version dropdown; options loaded from metadata asynchronously
+    if strings.TrimSpace(o.bootVersion) != "" {
+        ddBootVersion.SetOptions([]string{o.bootVersion}, nil)
+        ddBootVersion.SetCurrentOption(0)
+    }
+    form.AddFormItem(labeled(ddBootVersion, "Boot Version"))
 	form.AddInputField("Group ID", o.groupID, 0, nil, nil)
 	form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
 	form.AddInputField("Name", o.name, 0, nil, nil)
@@ -118,7 +125,7 @@ func runInteractive(o options) error {
 	form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
 
 	// Hook form items to variables so readOptions sees updated values
-	form.GetFormItem(2).(*tview.InputField).SetChangedFunc(func(t string) { inBootVersion.SetText(t) })
+    // index 2 is now Boot Version dropdown (no ChangedFunc needed)
 	form.GetFormItem(3).(*tview.InputField).SetChangedFunc(func(t string) { inGroupID.SetText(t) })
 	form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) { inArtifactID.SetText(t) })
 	form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
@@ -147,79 +154,41 @@ func runInteractive(o options) error {
         }
         showTextModal(app, pages, "Selected dependencies", body+"\n\nEsc/Enter to close.", nil)
     })
-	form.AddButton("Choose Boot Version", func() {
-		curr := readOptions()
-		ensureMeta := func() (*clientMeta, error) {
-			if cachedMeta != nil {
-				return cachedMeta, nil
-			}
-			m, err := fetchClientMetadata(curr.baseURL, curr.timeout)
-			if err == nil {
-				cachedMeta = m
-				// If metadata provides canonical options, update dropdowns
-				if len(m.Types) > 0 {
-					ddProjectType.SetOptions(m.Types, nil)
-					setDropDownValue(ddProjectType, m.Types, o.projectType)
-				}
-				if len(m.Languages) > 0 {
-					ddLanguage.SetOptions(m.Languages, nil)
-					setDropDownValue(ddLanguage, m.Languages, o.language)
-				}
-				if len(m.Packagings) > 0 {
-					ddPackaging.SetOptions(m.Packagings, nil)
-					setDropDownValue(ddPackaging, m.Packagings, o.packaging)
-				}
-			}
-			return m, err
-		}
-		go func() {
-			m, err := ensureMeta()
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					showModal(app, pages, fmt.Sprintf("Failed to load metadata\n%v", err), 6*time.Second, nil)
-					return
-				}
-				if len(m.BootVersions) == 0 {
-					showModal(app, pages, "No boot versions from metadata", 4*time.Second, nil)
-					return
-				}
-				showStringPicker(app, pages, "Select Boot Version", m.BootVersions, func(sel string) {
-					inBootVersion.SetText(sel)
-					// Update backing form item too
-					form.GetFormItem(2).(*tview.InputField).SetText(sel)
-				})
-			})
-		}()
-	})
+    // Removed: Choose Boot Version (now dropdown)
 	form.AddButton("Choose Java Version", func() {
 		curr := readOptions()
-		go func() {
-			var m *clientMeta
-			var err error
-			if cachedMeta != nil {
-				m = cachedMeta
-			} else {
-				m, err = fetchClientMetadata(curr.baseURL, curr.timeout)
-				if err == nil {
-					cachedMeta = m
-				}
-			}
-			app.QueueUpdateDraw(func() {
-				if err != nil {
-					showModal(app, pages, fmt.Sprintf("Failed to load metadata\n%v", err), 6*time.Second, nil)
-					return
-				}
-				if len(m.JavaVersions) == 0 {
-					showModal(app, pages, "No java versions from metadata", 4*time.Second, nil)
-					return
-				}
-				showStringPicker(app, pages, "Select Java Version", m.JavaVersions, func(sel string) {
-					inJavaVersion.SetText(sel)
-					form.GetFormItem(8).(*tview.InputField).SetText(sel)
-				})
-			})
-		}()
-	})
+        go func() {
+            var m *clientMeta
+            var err error
+            if cachedMeta != nil {
+                m = cachedMeta
+            } else {
+                m, err = fetchClientMetadata(curr.baseURL, curr.timeout)
+                if err == nil {
+                    cachedMeta = m
+                }
+            }
+            app.QueueUpdateDraw(func() {
+                if err != nil {
+                    showModal(app, pages, fmt.Sprintf("Failed to load metadata\n%v", err), 6*time.Second, nil)
+                    return
+                }
+                // update Boot Version dropdown options too
+                if len(m.BootVersions) > 0 {
+                    ddBootVersion.SetOptions(m.BootVersions, nil)
+                    setDropDownValue(ddBootVersion, m.BootVersions, o.bootVersion)
+                }
+                if len(m.JavaVersions) == 0 {
+                    showModal(app, pages, "No java versions from metadata", 4*time.Second, nil)
+                    return
+                }
+                showStringPicker(app, pages, "Select Java Version", m.JavaVersions, func(sel string) {
+                    inJavaVersion.SetText(sel)
+                    form.GetFormItem(8).(*tview.InputField).SetText(sel)
+                })
+            })
+        }()
+    })
 	form.AddButton("Show URL", func() {
 		curr := readOptions()
 		if u, err := buildURL(curr); err != nil {
@@ -252,7 +221,34 @@ func runInteractive(o options) error {
 		AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
 		AddText("Dependencies: Enter/Space toggle, 'd' to done. Use filter.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
 
-	pages.AddPage("main", frame, true, true)
+    pages.AddPage("main", frame, true, true)
+
+    // Auto-load metadata in background to populate dropdowns
+    go func() {
+        m, err := fetchClientMetadata(o.baseURL, o.timeout)
+        if err != nil {
+            return
+        }
+        cachedMeta = m
+        app.QueueUpdateDraw(func() {
+            if len(m.Types) > 0 {
+                ddProjectType.SetOptions(m.Types, nil)
+                setDropDownValue(ddProjectType, m.Types, o.projectType)
+            }
+            if len(m.Languages) > 0 {
+                ddLanguage.SetOptions(m.Languages, nil)
+                setDropDownValue(ddLanguage, m.Languages, o.language)
+            }
+            if len(m.Packagings) > 0 {
+                ddPackaging.SetOptions(m.Packagings, nil)
+                setDropDownValue(ddPackaging, m.Packagings, o.packaging)
+            }
+            if len(m.BootVersions) > 0 {
+                ddBootVersion.SetOptions(m.BootVersions, nil)
+                setDropDownValue(ddBootVersion, m.BootVersions, o.bootVersion)
+            }
+        })
+    }()
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return err
@@ -428,27 +424,54 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
                 }
             }
 
-			// UI: filter input + list
-			filter := tview.NewInputField().SetLabel("Filter: ")
-			list := tview.NewList()
-			list.SetBorder(true).SetTitle(" Select Dependencies (Enter/Space: toggle, d: done) ")
+            // UI: filter input + list (grouped by group)
+            filter := tview.NewInputField().SetLabel("Filter: ")
+            list := tview.NewList()
+            list.SetBorder(true).SetTitle(" Select Dependencies (Enter/Space: toggle, d: done) ")
 
-			// Helper to build visible list from filter
-			filtered := make([]depOption, len(deps))
-			copy(filtered, deps)
-			rebuild := func() {
-				q := strings.ToLower(strings.TrimSpace(filter.GetText()))
-				filtered = filtered[:0]
-				for _, d := range deps {
-					if q == "" || strings.Contains(strings.ToLower(d.ID), q) || strings.Contains(strings.ToLower(d.Name), q) || strings.Contains(strings.ToLower(d.Group), q) {
-						filtered = append(filtered, d)
-					}
-				}
-				list.Clear()
-				for _, d := range filtered {
-					list.AddItem(depLabel(d, selected[d.ID]), "", 0, nil)
-				}
-			}
+            // Row view model for grouped rendering
+            type depRow struct {
+                header bool
+                group  string
+                dep    depOption
+            }
+            rows := []depRow{}
+
+            // Helper to build visible list from filter, grouped
+            filtered := make([]depOption, len(deps))
+            copy(filtered, deps)
+            rebuild := func() {
+                q := strings.ToLower(strings.TrimSpace(filter.GetText()))
+                filtered = filtered[:0]
+                for _, d := range deps {
+                    if q == "" || strings.Contains(strings.ToLower(d.ID), q) || strings.Contains(strings.ToLower(d.Name), q) || strings.Contains(strings.ToLower(d.Group), q) {
+                        filtered = append(filtered, d)
+                    }
+                }
+                // build rows with headers
+                rows = rows[:0]
+                var prevGroup string
+                for i, d := range filtered {
+                    g := strings.TrimSpace(d.Group)
+                    if g == "" {
+                        g = "Other"
+                    }
+                    if i == 0 || !strings.EqualFold(prevGroup, g) {
+                        rows = append(rows, depRow{header: true, group: g})
+                        prevGroup = g
+                    }
+                    rows = append(rows, depRow{dep: d, group: g})
+                }
+                // fill list
+                list.Clear()
+                for _, r := range rows {
+                    if r.header {
+                        list.AddItem("== "+r.group+" ==", "", 0, nil)
+                    } else {
+                        list.AddItem(depLabel(r.dep, selected[r.dep.ID]), "", 0, nil)
+                    }
+                }
+            }
             filter.SetChangedFunc(func(text string) { rebuild() })
             // Tab/Backtab/Enter move focus from filter -> list. Esc closes.
             filter.SetDoneFunc(func(key tcell.Key) {
@@ -476,8 +499,12 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
 				app.SetFocus(pages)
 			})
             list.SetSelectedFunc(func(i int, mainText, secondaryText string, shortcut rune) {
-                if i >= 0 && i < len(filtered) {
-                    d := filtered[i]
+                if i >= 0 && i < len(rows) {
+                    r := rows[i]
+                    if r.header {
+                        return
+                    }
+                    d := r.dep
                     selected[d.ID] = !selected[d.ID]
                     list.SetItemText(i, depLabel(d, selected[d.ID]), "")
                     // If newly checked, clear filter to show full list again
@@ -494,8 +521,12 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
                     pages.RemovePage("deps")
                     return nil
                 case ' ': // Space toggles
-                    if i := list.GetCurrentItem(); i >= 0 && i < len(filtered) {
-                        d := filtered[i]
+                    if i := list.GetCurrentItem(); i >= 0 && i < len(rows) {
+                        r := rows[i]
+                        if r.header {
+                            return nil
+                        }
+                        d := r.dep
                         selected[d.ID] = !selected[d.ID]
                         list.SetItemText(i, depLabel(d, selected[d.ID]), "")
                         if selected[d.ID] {

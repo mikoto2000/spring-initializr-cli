@@ -10,6 +10,7 @@ Spring Initializr(https://start.spring.io/) をコマンドラインから使い
 - バージョン表示: `./spring-initializr-cli --version` または `-V`
 - ライセンス表示: `./spring-initializr-cli --license` または `-L`
 - 対話（TUI）モード: `./spring-initializr-cli -i`
+- 引数なし起動で自動的に対話（TUI）モードが起動します。
 
 例
 - ZIP をダウンロードのみ:

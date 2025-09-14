@@ -10,6 +10,9 @@ import (
 
 func parseFlags() options {
     var o options
+    // If invoked without any arguments, default to interactive mode.
+    // This is applied after flag.Parse so explicit flags still override.
+    noArgs := len(os.Args) == 1
 
     flag.StringVar(&o.baseURL, "base-url", defaultBaseURL, "Spring Initializr base URL")
     flag.StringVar(&o.target, "target", "zip", "Archive format: zip (default)")
@@ -54,6 +57,10 @@ func parseFlags() options {
     }
 
     flag.Parse()
+
+    if noArgs {
+        o.interactive = true
+    }
 
     // Fill derived defaults
     if o.baseDir == "" {

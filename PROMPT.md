@@ -19,3 +19,6 @@
 17. license オプションでアプリケーションのライセンスと、NOTICE(依存ライブラリ(tview)のライセンス)を表示するようにしたいです。
 18. 現状に合わせて READMEを更新してください
 19. .gitignoreを作成してください。
+20. Boot Version は、 `id` とも `name` とも違う値を入れなければならないようです、何を入れればいいかわかりますか？
+21. `/metadata/client の bootVersion.values[].id` には　`3.5.5.RELEASE` の `.RELEASE`や、 `3.4.10.BUILD-SNAPSHOT` の `.BUILD` ように、不要な文字列が入っています。
+22. `3.5.5.RELEASE` とすると、以下のように Not Found と怒られます

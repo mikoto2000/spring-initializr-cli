@@ -40,7 +40,7 @@ TUI の操作（tview ベース）
 主なオプション
 - `--type` : `maven-project` / `gradle-project` / `gradle-build`（デフォルト: `maven-project`）
 - `--language` : `java` / `kotlin` / `groovy`（デフォルト: `java`）
-- `--boot-version` : Spring Boot のバージョン（未指定なら Initializr のデフォルト）
+- `--boot-version` : Spring Boot のバージョン（未指定なら Initializr のデフォルト）。古い表記（例: `3.5.5.RELEASE`, `2.0.0.BUILD-SNAPSHOT`, `2.0.0.M7`, `2.0.0.RC1`）は CLI 側で `3.5.5`, `2.0.0-SNAPSHOT`, `2.0.0-M7`, `2.0.0-RC1` の形式に自動正規化されます。
 - `--group-id`, `--artifact-id`, `--name`, `--description`, `--package-name`, `--packaging`(jar/war), `--java-version`
 - `--dependencies` : 依存 ID のカンマ区切り（例: `web,data-jpa,security`）
 - `--base-dir` : 展開時のプロジェクトルート名（未指定は `artifact-id`）

@@ -257,11 +257,8 @@ func runInteractive(o options) error {
         }
         if len(meta.JavaVersions) > 0 {
             ddJavaVersion.SetOptions(meta.JavaVersions, nil)
-            if meta.DefaultJavaVersion != "" {
-                setDropDownValue(ddJavaVersion, meta.JavaVersions, meta.DefaultJavaVersion)
-            } else if o.javaVersion != "" {
-                setDropDownValue(ddJavaVersion, meta.JavaVersions, o.javaVersion)
-            }
+            // Prefer our CLI default/user choice (e.g., 21) over server default.
+            setDropDownValue(ddJavaVersion, meta.JavaVersions, o.javaVersion)
         }
     }
 

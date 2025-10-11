@@ -25,3 +25,4 @@
 23. 引数無しで実行した際には、 interactive モードで起動するようにしたい
 24. TUI モードで、`Group` と `Artifact ID` を入力された時点で、 `Package Name` を `Group` と `Artifact ID` を `.` で　JOIN した文字列にしたい
 25. Project Type のデフォルトを maven-projectに変更したい
+25. Java Version のデフォルトを 21 にしたい

@@ -228,11 +228,8 @@ func runInteractive(o options) error {
     if meta != nil {
         if len(meta.Types) > 0 {
             ddProjectType.SetOptions(meta.Types, nil)
-            if meta.DefaultType != "" {
-                setDropDownValue(ddProjectType, meta.Types, meta.DefaultType)
-            } else {
-                setDropDownValue(ddProjectType, meta.Types, o.projectType)
-            }
+            // Prefer our CLI default/user choice over server default.
+            setDropDownValue(ddProjectType, meta.Types, o.projectType)
         }
         if len(meta.Languages) > 0 {
             ddLanguage.SetOptions(meta.Languages, nil)

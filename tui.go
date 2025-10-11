@@ -138,11 +138,43 @@ func runInteractive(o options) error {
 
 	// Hook form items to variables so readOptions sees updated values
     // index 2 is Boot Version dropdown, index 3 is Java Version dropdown (no ChangedFunc needed)
-    form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) { inGroupID.SetText(t) })
-    form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) { inArtifactID.SetText(t) })
+    // Auto-populate Package Name from Group ID and Artifact ID unless manually edited
+    pkgField := form.GetFormItem(9).(*tview.InputField)
+    packageEdited := false
+    updatingPackage := false
+
+    autoUpdatePackage := func() {
+        if packageEdited {
+            return
+        }
+        g := strings.TrimSpace(inGroupID.GetText())
+        a := strings.TrimSpace(inArtifactID.GetText())
+        if g == "" && a == "" {
+            return
+        }
+        pkg := sanitizePackage(strings.Trim(g+"."+a, "."))
+        updatingPackage = true
+        inPackageName.SetText(pkg)
+        pkgField.SetText(pkg)
+        updatingPackage = false
+    }
+
+    form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) {
+        inGroupID.SetText(t)
+        autoUpdatePackage()
+    })
+    form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) {
+        inArtifactID.SetText(t)
+        autoUpdatePackage()
+    })
     form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
     form.GetFormItem(7).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
-    form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) { inPackageName.SetText(t) })
+    form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) {
+        inPackageName.SetText(t)
+        if !updatingPackage {
+            packageEdited = true
+        }
+    })
     form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseDir.SetText(t) })
     form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
     form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })

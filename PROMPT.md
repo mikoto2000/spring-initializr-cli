@@ -23,3 +23,4 @@
 21. `/metadata/client の bootVersion.values[].id` には　`3.5.5.RELEASE` の `.RELEASE`や、 `3.4.10.BUILD-SNAPSHOT` の `.BUILD` ように、不要な文字列が入っています。
 22. `3.5.5.RELEASE` とすると、以下のように Not Found と怒られます
 23. 引数無しで実行した際には、 interactive モードで起動するようにしたい
+24. TUI モードで、`Group` と `Artifact ID` を入力された時点で、 `Package Name` を `Group` と `Artifact ID` を `.` で　JOIN した文字列にしたい

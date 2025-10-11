@@ -26,3 +26,4 @@
 24. TUI モードで、`Group` と `Artifact ID` を入力された時点で、 `Package Name` を `Group` と `Artifact ID` を `.` で　JOIN した文字列にしたい
 25. Project Type のデフォルトを maven-projectに変更したい
 25. Java Version のデフォルトを 21 にしたい
+26. Base Dir を削除し、 Artifact ID と同じ値を使う用に修正したい

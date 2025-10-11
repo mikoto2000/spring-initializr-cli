@@ -64,7 +64,6 @@ func runInteractive(o options) error {
 	inName := tview.NewInputField().SetText(o.name)
 	inDescription := tview.NewInputField().SetText(o.description)
     inPackageName := tview.NewInputField().SetText(o.packageName)
-	inBaseDir := tview.NewInputField().SetText(o.baseDir)
 	inOutput := tview.NewInputField().SetText(o.output)
 	inBaseURL := tview.NewInputField().SetText(o.baseURL)
 
@@ -92,16 +91,16 @@ func runInteractive(o options) error {
         o.name = strings.TrimSpace(inName.GetText())
         o.description = strings.TrimSpace(inDescription.GetText())
         o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
-        o.baseDir = strings.TrimSpace(inBaseDir.GetText())
+        // Base Dir is no longer user-editable in TUI; always mirror Artifact ID
+        o.baseDir = o.artifactID
         o.output = strings.TrimSpace(inOutput.GetText())
         o.baseURL = strings.TrimSpace(inBaseURL.GetText())
 		// Dependencies
 		o.dependencies = joinSelected(selectedDeps)
 
 		// Derived defaults if empty
-		if o.baseDir == "" {
-			o.baseDir = o.artifactID
-		}
+        // Base Dir is always Artifact ID in TUI
+        o.baseDir = o.artifactID
 		if o.packageName == "" {
 			o.packageName = sanitizePackage(o.groupID + "." + o.artifactID)
 		}
@@ -132,7 +131,6 @@ func runInteractive(o options) error {
     form.AddInputField("Description", o.description, 0, nil, nil)
     form.AddFormItem(labeled(ddPackaging, "Packaging"))
     form.AddInputField("Package Name", o.packageName, 0, nil, nil)
-    form.AddInputField("Base Dir", o.baseDir, 0, nil, nil)
     form.AddInputField("Output Zip", o.output, 0, nil, nil)
     form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
 
@@ -175,9 +173,9 @@ func runInteractive(o options) error {
             packageEdited = true
         }
     })
-    form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseDir.SetText(t) })
-    form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
-    form.GetFormItem(12).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
+    // Indices shift after removing "Base Dir" field
+    form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inOutput.SetText(t) })
+    form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
 
 	// Buttons
     var postRun func() error // set when Download/Extract is chosen

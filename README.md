@@ -47,6 +47,7 @@ TUI の操作（tview ベース）
 - `--base-dir` : 展開時のプロジェクトルート名（未指定は `artifact-id`）
 - `--output` : ZIP の保存先ファイル名（デフォルト: `<artifact-id>.zip`）
 - `--extract` : ZIP をダウンロード後に展開
+  - アーカイブ内に単一のトップレベルディレクトリがあり、その名前が `--base-dir`（デフォルトは `artifact-id`）と同一の場合は、そのトップレベルを自動的に取り除いて展開します（`<base-dir>/<base-dir>/...` の二重ネストを回避）。
 - `--dry-run` : 作成される URL を表示して終了（ダウンロードはしない）
 - `--base-url` : Spring Initializr のベース URL（デフォルト: `https://start.spring.io`）
 - `-v` : 冗長ログ

@@ -27,3 +27,4 @@
 25. Project Type のデフォルトを maven-projectに変更したい
 25. Java Version のデフォルトを 21 にしたい
 26. Base Dir を削除し、 Artifact ID と同じ値を使う用に修正したい
+27. Output Zip を削除し、 Artifact ID に .zip を付けた名前で出力するようにしたい

@@ -23,7 +23,7 @@ Spring Initializr(https://start.spring.io/) をコマンドラインから使い
   `./spring-initializr-cli --dependencies web,data-jpa --dry-run`
 
 TUI の操作（tview ベース）
-- 起動時に Spring Initializr のメタデータ（`/metadata/client`）を取得してから画面を表示します。
+- 起動時に Spring Initializr のメタデータ（`/` with `application/vnd.initializr.v2.3+json`、フォールバックで `/metadata/client`）を取得してから画面を表示します。
   - Project Type / Language / Packaging / Boot Version / Java Version はメタデータの候補とデフォルトが反映されます。
 - 画面上のフォームで各項目を編集（Tab/Shift+Tab で移動）。
 - 依存選択（Select Dependencies）
@@ -35,7 +35,7 @@ TUI の操作（tview ベース）
 - 「Show URL」で生成 URL を表示。「Download」「Download+Extract」で実行。
 
 依存関係の取得
-- TUI は起動時に Spring Initializr のメタデータ（まず `/metadata/client`、次にフォールバックで `/dependencies`）を取得します。
+- TUI は起動時に Spring Initializr のメタデータ（まず `/`、次に `/metadata/client`、さらにフォールバックで `/dependencies`）を取得します。
 - ネットワークに接続できない場合は依存一覧の取得に失敗します。その際はコマンドラインの `--dependencies` 指定をご利用ください。
 
 主なオプション
@@ -43,6 +43,7 @@ TUI の操作（tview ベース）
 - `--language` : `java` / `kotlin` / `groovy`（デフォルト: `java`）
 - `--boot-version` : Spring Boot のバージョン（未指定なら Initializr のデフォルト）。古い表記（例: `3.5.5.RELEASE`, `2.0.0.BUILD-SNAPSHOT`, `2.0.0.M7`, `2.0.0.RC1`）は CLI 側で `3.5.5`, `2.0.0-SNAPSHOT`, `2.0.0-M7`, `2.0.0-RC1` の形式に自動正規化されます。
 - `--group-id`, `--artifact-id`, `--name`, `--description`, `--package-name`, `--packaging`(jar/war), `--java-version`
+- `--configuration-file-format` : `properties` / `yaml`（未指定なら Initializr のデフォルト）
 - `--dependencies` : 依存 ID のカンマ区切り（例: `web,data-jpa,security`）
 - `--base-dir` : 展開時のプロジェクトルート名（未指定は `artifact-id`）
 - `--output` : ZIP の保存先ファイル名（デフォルト: `<artifact-id>.zip`）

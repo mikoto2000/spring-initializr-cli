@@ -14,17 +14,17 @@ import (
 
 // runInteractive launches a tview-based TUI for editing options and triggering actions.
 func runInteractive(o options) error {
-    app := tview.NewApplication()
+	app := tview.NewApplication()
 
-    pages := tview.NewPages()
+	pages := tview.NewPages()
 
-    depCatalog := make(map[string]depOption) // id -> dep info
+	depCatalog := make(map[string]depOption) // id -> dep info
 
-    // Fetch metadata synchronously before building the UI so defaults match server
-    var meta *clientMeta
-    if m, err := fetchClientMetadata(o.baseURL, o.timeout); err == nil {
-        meta = m
-    }
+	// Fetch metadata synchronously before building the UI so defaults match server
+	var meta *clientMeta
+	if m, err := fetchClientMetadata(o.baseURL, o.timeout); err == nil {
+		meta = m
+	}
 
 	// State: selected dependency IDs
 	selectedDeps := make(map[string]bool)
@@ -51,19 +51,21 @@ func runInteractive(o options) error {
 	ddProjectType := tview.NewDropDown().SetOptions(projectTypes, nil)
 	ddLanguage := tview.NewDropDown().SetOptions(languages, nil)
 	ddPackaging := tview.NewDropDown().SetOptions(packagings, nil)
+	ddConfigFileFormat := tview.NewDropDown().SetOptions([]string{"properties", "yaml"}, nil)
 
-    // Set initial selections (will be overridden by metadata defaults if available)
-    setDropDownValue(ddProjectType, projectTypes, o.projectType)
-    setDropDownValue(ddLanguage, languages, o.language)
-    setDropDownValue(ddPackaging, packagings, o.packaging)
+	// Set initial selections (will be overridden by metadata defaults if available)
+	setDropDownValue(ddProjectType, projectTypes, o.projectType)
+	setDropDownValue(ddLanguage, languages, o.language)
+	setDropDownValue(ddPackaging, packagings, o.packaging)
+	setDropDownValue(ddConfigFileFormat, []string{"properties", "yaml"}, o.configFileFormat)
 
-    ddBootVersion := tview.NewDropDown()
-    ddJavaVersion := tview.NewDropDown()
+	ddBootVersion := tview.NewDropDown()
+	ddJavaVersion := tview.NewDropDown()
 	inGroupID := tview.NewInputField().SetText(o.groupID)
 	inArtifactID := tview.NewInputField().SetText(o.artifactID)
 	inName := tview.NewInputField().SetText(o.name)
 	inDescription := tview.NewInputField().SetText(o.description)
-    inPackageName := tview.NewInputField().SetText(o.packageName)
+	inPackageName := tview.NewInputField().SetText(o.packageName)
 	inBaseURL := tview.NewInputField().SetText(o.baseURL)
 
 	// Small helper to pull current form values into options
@@ -75,124 +77,128 @@ func runInteractive(o options) error {
 		if _, v := ddLanguage.GetCurrentOption(); v != "" {
 			o.language = v
 		}
-        if _, v := ddPackaging.GetCurrentOption(); v != "" {
-            o.packaging = v
-        }
-        if _, v := ddBootVersion.GetCurrentOption(); v != "" {
-            o.bootVersion = v
-        }
-        if _, v := ddJavaVersion.GetCurrentOption(); v != "" {
-            o.javaVersion = v
-        }
-        // Inputs
-        o.groupID = strings.TrimSpace(inGroupID.GetText())
-        o.artifactID = strings.TrimSpace(inArtifactID.GetText())
-        o.name = strings.TrimSpace(inName.GetText())
-        o.description = strings.TrimSpace(inDescription.GetText())
-        o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
-        // Base Dir is no longer user-editable in TUI; always mirror Artifact ID
-        o.baseDir = o.artifactID
-        // Output zip name is fixed to <artifactId>.zip in TUI
-        o.output = o.artifactID + ".zip"
-        o.baseURL = strings.TrimSpace(inBaseURL.GetText())
+		if _, v := ddPackaging.GetCurrentOption(); v != "" {
+			o.packaging = v
+		}
+		if _, v := ddBootVersion.GetCurrentOption(); v != "" {
+			o.bootVersion = v
+		}
+		if _, v := ddJavaVersion.GetCurrentOption(); v != "" {
+			o.javaVersion = v
+		}
+		if _, v := ddConfigFileFormat.GetCurrentOption(); v != "" {
+			o.configFileFormat = v
+		}
+		// Inputs
+		o.groupID = strings.TrimSpace(inGroupID.GetText())
+		o.artifactID = strings.TrimSpace(inArtifactID.GetText())
+		o.name = strings.TrimSpace(inName.GetText())
+		o.description = strings.TrimSpace(inDescription.GetText())
+		o.packageName = sanitizePackage(strings.TrimSpace(inPackageName.GetText()))
+		// Base Dir is no longer user-editable in TUI; always mirror Artifact ID
+		o.baseDir = o.artifactID
+		// Output zip name is fixed to <artifactId>.zip in TUI
+		o.output = o.artifactID + ".zip"
+		o.baseURL = strings.TrimSpace(inBaseURL.GetText())
 		// Dependencies
 		o.dependencies = joinSelected(selectedDeps)
 
 		// Derived defaults if empty
-        // Base Dir is always Artifact ID in TUI
-        o.baseDir = o.artifactID
+		// Base Dir is always Artifact ID in TUI
+		o.baseDir = o.artifactID
 		if o.packageName == "" {
 			o.packageName = sanitizePackage(o.groupID + "." + o.artifactID)
 		}
-        // Output is always <artifactId>.zip in TUI
-        o.output = o.artifactID + ".zip"
-        return o
-    }
+		// Output is always <artifactId>.zip in TUI
+		o.output = o.artifactID + ".zip"
+		return o
+	}
 
 	// Build form items
-    form.AddFormItem(labeled(ddProjectType, "Project Type"))
-    form.AddFormItem(labeled(ddLanguage, "Language"))
-    // Boot Version dropdown
-    if strings.TrimSpace(o.bootVersion) != "" {
-        ddBootVersion.SetOptions([]string{o.bootVersion}, nil)
-        ddBootVersion.SetCurrentOption(0)
-    }
-    form.AddFormItem(labeled(ddBootVersion, "Boot Version"))
-    // Java Version dropdown
-    if strings.TrimSpace(o.javaVersion) != "" {
-        ddJavaVersion.SetOptions([]string{o.javaVersion}, nil)
-        ddJavaVersion.SetCurrentOption(0)
-    }
-    form.AddFormItem(labeled(ddJavaVersion, "Java Version"))
-    form.AddInputField("Group ID", o.groupID, 0, nil, nil)
-    form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
-    form.AddInputField("Name", o.name, 0, nil, nil)
-    form.AddInputField("Description", o.description, 0, nil, nil)
-    form.AddFormItem(labeled(ddPackaging, "Packaging"))
-    form.AddInputField("Package Name", o.packageName, 0, nil, nil)
-    form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
+	form.AddFormItem(labeled(ddProjectType, "Project Type"))
+	form.AddFormItem(labeled(ddLanguage, "Language"))
+	// Boot Version dropdown
+	if strings.TrimSpace(o.bootVersion) != "" {
+		ddBootVersion.SetOptions([]string{o.bootVersion}, nil)
+		ddBootVersion.SetCurrentOption(0)
+	}
+	form.AddFormItem(labeled(ddBootVersion, "Boot Version"))
+	// Java Version dropdown
+	if strings.TrimSpace(o.javaVersion) != "" {
+		ddJavaVersion.SetOptions([]string{o.javaVersion}, nil)
+		ddJavaVersion.SetCurrentOption(0)
+	}
+	form.AddFormItem(labeled(ddJavaVersion, "Java Version"))
+	form.AddInputField("Group ID", o.groupID, 0, nil, nil)
+	form.AddInputField("Artifact ID", o.artifactID, 0, nil, nil)
+	form.AddInputField("Name", o.name, 0, nil, nil)
+	form.AddInputField("Description", o.description, 0, nil, nil)
+	form.AddFormItem(labeled(ddPackaging, "Packaging"))
+	form.AddFormItem(labeled(ddConfigFileFormat, "Config File"))
+	form.AddInputField("Package Name", o.packageName, 0, nil, nil)
+	form.AddInputField("Base URL", o.baseURL, 0, nil, nil)
 
 	// Hook form items to variables so readOptions sees updated values
-    // index 2 is Boot Version dropdown, index 3 is Java Version dropdown (no ChangedFunc needed)
-    // Auto-populate Package Name from Group ID and Artifact ID unless manually edited
-    pkgField := form.GetFormItem(9).(*tview.InputField)
-    packageEdited := false
-    updatingPackage := false
+	// index 2 is Boot Version dropdown, index 3 is Java Version dropdown (no ChangedFunc needed)
+	// Auto-populate Package Name from Group ID and Artifact ID unless manually edited
+	pkgField := form.GetFormItem(10).(*tview.InputField)
+	packageEdited := false
+	updatingPackage := false
 
-    autoUpdatePackage := func() {
-        if packageEdited {
-            return
-        }
-        g := strings.TrimSpace(inGroupID.GetText())
-        a := strings.TrimSpace(inArtifactID.GetText())
-        if g == "" && a == "" {
-            return
-        }
-        pkg := sanitizePackage(strings.Trim(g+"."+a, "."))
-        updatingPackage = true
-        inPackageName.SetText(pkg)
-        pkgField.SetText(pkg)
-        updatingPackage = false
-    }
+	autoUpdatePackage := func() {
+		if packageEdited {
+			return
+		}
+		g := strings.TrimSpace(inGroupID.GetText())
+		a := strings.TrimSpace(inArtifactID.GetText())
+		if g == "" && a == "" {
+			return
+		}
+		pkg := sanitizePackage(strings.Trim(g+"."+a, "."))
+		updatingPackage = true
+		inPackageName.SetText(pkg)
+		pkgField.SetText(pkg)
+		updatingPackage = false
+	}
 
-    form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) {
-        inGroupID.SetText(t)
-        autoUpdatePackage()
-    })
-    form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) {
-        inArtifactID.SetText(t)
-        autoUpdatePackage()
-    })
-    form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
-    form.GetFormItem(7).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
-    form.GetFormItem(9).(*tview.InputField).SetChangedFunc(func(t string) {
-        inPackageName.SetText(t)
-        if !updatingPackage {
-            packageEdited = true
-        }
-    })
-    // Indices shift after removing "Base Dir" and "Output Zip" fields
-    form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
+	form.GetFormItem(4).(*tview.InputField).SetChangedFunc(func(t string) {
+		inGroupID.SetText(t)
+		autoUpdatePackage()
+	})
+	form.GetFormItem(5).(*tview.InputField).SetChangedFunc(func(t string) {
+		inArtifactID.SetText(t)
+		autoUpdatePackage()
+	})
+	form.GetFormItem(6).(*tview.InputField).SetChangedFunc(func(t string) { inName.SetText(t) })
+	form.GetFormItem(7).(*tview.InputField).SetChangedFunc(func(t string) { inDescription.SetText(t) })
+	form.GetFormItem(10).(*tview.InputField).SetChangedFunc(func(t string) {
+		inPackageName.SetText(t)
+		if !updatingPackage {
+			packageEdited = true
+		}
+	})
+	// Indices shift after removing "Base Dir" and "Output Zip" fields
+	form.GetFormItem(11).(*tview.InputField).SetChangedFunc(func(t string) { inBaseURL.SetText(t) })
 
 	// Buttons
-    var postRun func() error // set when Download/Extract is chosen
+	var postRun func() error // set when Download/Extract is chosen
 
-    form.AddButton("Select Dependencies", func() {
-        // fetch and show selector
-        curr := readOptions()
-        showDepsSelector(app, pages, curr.baseURL, curr.timeout, selectedDeps, depCatalog)
-    })
-    form.AddButton("Show Selected", func() {
-        lines := selectedDisplayLines(selectedDeps, depCatalog)
-        var body string
-        if len(lines) == 0 {
-            body = "(none)"
-        } else {
-            body = strings.Join(lines, "\n")
-        }
-        showTextModal(app, pages, "Selected dependencies", body+"\n\nEsc/Enter to close.", nil)
-    })
-    // Removed: Choose Boot/Java Version (both dropdowns now)
+	form.AddButton("Select Dependencies", func() {
+		// fetch and show selector
+		curr := readOptions()
+		showDepsSelector(app, pages, curr.baseURL, curr.timeout, selectedDeps, depCatalog)
+	})
+	form.AddButton("Show Selected", func() {
+		lines := selectedDisplayLines(selectedDeps, depCatalog)
+		var body string
+		if len(lines) == 0 {
+			body = "(none)"
+		} else {
+			body = strings.Join(lines, "\n")
+		}
+		showTextModal(app, pages, "Selected dependencies", body+"\n\nEsc/Enter to close.", nil)
+	})
+	// Removed: Choose Boot/Java Version (both dropdowns now)
 	form.AddButton("Show URL", func() {
 		curr := readOptions()
 		if u, err := buildURL(curr); err != nil {
@@ -219,51 +225,62 @@ func runInteractive(o options) error {
 	})
 	form.AddButton("Quit", func() { app.Stop() })
 
-    // If metadata is available, populate dropdown options and set server defaults
-    if meta != nil {
-        if len(meta.Types) > 0 {
-            ddProjectType.SetOptions(meta.Types, nil)
-            // Prefer our CLI default/user choice over server default.
-            setDropDownValue(ddProjectType, meta.Types, o.projectType)
-        }
-        if len(meta.Languages) > 0 {
-            ddLanguage.SetOptions(meta.Languages, nil)
-            if meta.DefaultLanguage != "" {
-                setDropDownValue(ddLanguage, meta.Languages, meta.DefaultLanguage)
-            } else {
-                setDropDownValue(ddLanguage, meta.Languages, o.language)
-            }
-        }
-        if len(meta.Packagings) > 0 {
-            ddPackaging.SetOptions(meta.Packagings, nil)
-            if meta.DefaultPackaging != "" {
-                setDropDownValue(ddPackaging, meta.Packagings, meta.DefaultPackaging)
-            } else {
-                setDropDownValue(ddPackaging, meta.Packagings, o.packaging)
-            }
-        }
-        if len(meta.BootVersions) > 0 {
-            ddBootVersion.SetOptions(meta.BootVersions, nil)
-            if meta.DefaultBootVersion != "" {
-                setDropDownValue(ddBootVersion, meta.BootVersions, meta.DefaultBootVersion)
-            } else if o.bootVersion != "" {
-                setDropDownValue(ddBootVersion, meta.BootVersions, o.bootVersion)
-            }
-        }
-        if len(meta.JavaVersions) > 0 {
-            ddJavaVersion.SetOptions(meta.JavaVersions, nil)
-            // Prefer our CLI default/user choice (e.g., 21) over server default.
-            setDropDownValue(ddJavaVersion, meta.JavaVersions, o.javaVersion)
-        }
-    }
+	// If metadata is available, populate dropdown options and set server defaults
+	if meta != nil {
+		if len(meta.Types) > 0 {
+			ddProjectType.SetOptions(meta.Types, nil)
+			// Prefer our CLI default/user choice over server default.
+			setDropDownValue(ddProjectType, meta.Types, o.projectType)
+		}
+		if len(meta.Languages) > 0 {
+			ddLanguage.SetOptions(meta.Languages, nil)
+			if meta.DefaultLanguage != "" {
+				setDropDownValue(ddLanguage, meta.Languages, meta.DefaultLanguage)
+			} else {
+				setDropDownValue(ddLanguage, meta.Languages, o.language)
+			}
+		}
+		if len(meta.Packagings) > 0 {
+			ddPackaging.SetOptions(meta.Packagings, nil)
+			if meta.DefaultPackaging != "" {
+				setDropDownValue(ddPackaging, meta.Packagings, meta.DefaultPackaging)
+			} else {
+				setDropDownValue(ddPackaging, meta.Packagings, o.packaging)
+			}
+		}
+		if len(meta.BootVersions) > 0 {
+			ddBootVersion.SetOptions(meta.BootVersions, nil)
+			if meta.DefaultBootVersion != "" {
+				setDropDownValue(ddBootVersion, meta.BootVersions, meta.DefaultBootVersion)
+			} else if o.bootVersion != "" {
+				setDropDownValue(ddBootVersion, meta.BootVersions, o.bootVersion)
+			}
+		}
+		if len(meta.JavaVersions) > 0 {
+			ddJavaVersion.SetOptions(meta.JavaVersions, nil)
+			if o.javaVersion != "" {
+				setDropDownValue(ddJavaVersion, meta.JavaVersions, o.javaVersion)
+			} else if meta.DefaultJavaVersion != "" {
+				setDropDownValue(ddJavaVersion, meta.JavaVersions, meta.DefaultJavaVersion)
+			}
+		}
+		if len(meta.ConfigFileFormats) > 0 {
+			ddConfigFileFormat.SetOptions(meta.ConfigFileFormats, nil)
+			if o.configFileFormat != "" {
+				setDropDownValue(ddConfigFileFormat, meta.ConfigFileFormats, o.configFileFormat)
+			} else if meta.DefaultConfigFileFormat != "" {
+				setDropDownValue(ddConfigFileFormat, meta.ConfigFileFormats, meta.DefaultConfigFileFormat)
+			}
+		}
+	}
 
-    // Layout
-    frame := tview.NewFrame(form).
-        SetBorders(0, 0, 0, 0, 1, 1).
-        AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
-        AddText("Dependencies: Enter/Space toggle, 'd' to done. Use filter.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
+	// Layout
+	frame := tview.NewFrame(form).
+		SetBorders(0, 0, 0, 0, 1, 1).
+		AddText("Tab/Shift+Tab to move, Enter to activate.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor).
+		AddText("Dependencies: Enter/Space toggle, 'd' to done. Use filter.", true, tview.AlignLeft, tview.Styles.SecondaryTextColor)
 
-    pages.AddPage("main", frame, true, true)
+	pages.AddPage("main", frame, true, true)
 
 	if err := app.SetRoot(pages, true).EnableMouse(true).Run(); err != nil {
 		return err
@@ -297,50 +314,50 @@ func setDropDownValue(dd *tview.DropDown, options []string, val string) {
 }
 
 func joinSelected(m map[string]bool) string {
-    ids := make([]string, 0, len(m))
-    for id, ok := range m {
-        if ok {
-            ids = append(ids, id)
-        }
-    }
-    sort.Strings(ids)
-    return strings.Join(ids, ",")
+	ids := make([]string, 0, len(m))
+	for id, ok := range m {
+		if ok {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return strings.Join(ids, ",")
 }
 
 func selectedIDs(m map[string]bool) []string {
-    ids := make([]string, 0, len(m))
-    for id, ok := range m {
-        if ok {
-            ids = append(ids, id)
-        }
-    }
-    sort.Strings(ids)
-    return ids
+	ids := make([]string, 0, len(m))
+	for id, ok := range m {
+		if ok {
+			ids = append(ids, id)
+		}
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // selectedDisplayLines returns lines formatted as "Name (ID) [Group]" if available.
 func selectedDisplayLines(selected map[string]bool, catalog map[string]depOption) []string {
-    ids := selectedIDs(selected)
-    if len(ids) == 0 {
-        return nil
-    }
-    out := make([]string, 0, len(ids))
-    for _, id := range ids {
-        if d, ok := catalog[id]; ok {
-            name := d.Name
-            if name == "" {
-                name = id
-            }
-            if d.Group != "" {
-                out = append(out, fmt.Sprintf("%s (%s) [%s]", name, id, d.Group))
-            } else {
-                out = append(out, fmt.Sprintf("%s (%s)", name, id))
-            }
-        } else {
-            out = append(out, id)
-        }
-    }
-    return out
+	ids := selectedIDs(selected)
+	if len(ids) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		if d, ok := catalog[id]; ok {
+			name := d.Name
+			if name == "" {
+				name = id
+			}
+			if d.Group != "" {
+				out = append(out, fmt.Sprintf("%s (%s) [%s]", name, id, d.Group))
+			} else {
+				out = append(out, fmt.Sprintf("%s (%s)", name, id))
+			}
+		} else {
+			out = append(out, id)
+		}
+	}
+	return out
 }
 
 type depOption struct {
@@ -351,90 +368,115 @@ type depOption struct {
 
 // clientMeta holds selected lists parsed from /metadata/client
 type clientMeta struct {
-    Types        []string
-    Languages    []string
-    Packagings   []string
-    JavaVersions []string
-    BootVersions []string
-    DefaultType        string
-    DefaultLanguage    string
-    DefaultPackaging   string
-    DefaultJavaVersion string
-    DefaultBootVersion string
+	Types                   []string
+	Languages               []string
+	Packagings              []string
+	JavaVersions            []string
+	BootVersions            []string
+	ConfigFileFormats       []string
+	DefaultType             string
+	DefaultLanguage         string
+	DefaultPackaging        string
+	DefaultJavaVersion      string
+	DefaultBootVersion      string
+	DefaultConfigFileFormat string
 }
 
 // fetchClientMetadata returns lists from /metadata/client for dropdowns and pickers.
 func fetchClientMetadata(baseURL string, timeout int) (*clientMeta, error) {
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	base := strings.TrimRight(baseURL, "/")
-	req, _ := http.NewRequest(http.MethodGet, base+"/metadata/client", nil)
-	req.Header.Set("Accept", "application/json")
-	resp, err := client.Do(req)
+	data, err := fetchMetadataPayload(client, base)
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("status %s", resp.Status)
+	type valueItem struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Default bool   `json:"default"`
 	}
+	type section struct {
+		Default string      `json:"default"`
+		Values  []valueItem `json:"values"`
+	}
+	extractIDs := func(key string) ([]string, string) {
+		raw, ok := data[key]
+		if !ok {
+			return nil, ""
+		}
+		var sec section
+		if err := json.Unmarshal(raw, &sec); err != nil {
+			return nil, ""
+		}
+		out := make([]string, 0, len(sec.Values))
+		for _, v := range sec.Values {
+			if v.ID != "" {
+				out = append(out, v.ID)
+			}
+		}
+		def := sec.Default
+		if def == "" {
+			for _, v := range sec.Values {
+				if v.Default {
+					def = v.ID
+					break
+				}
+			}
+		}
+		return out, def
+	}
+	types, defType := extractIDs("type")
+	langs, defLang := extractIDs("language")
+	packs, defPack := extractIDs("packaging")
+	javas, defJava := extractIDs("javaVersion")
+	boots, defBoot := extractIDs("bootVersion")
+	cfgFormats, defCfgFormat := extractIDs("configurationFileFormat")
+	m := &clientMeta{
+		Types:                   types,
+		Languages:               langs,
+		Packagings:              packs,
+		JavaVersions:            javas,
+		BootVersions:            boots,
+		ConfigFileFormats:       cfgFormats,
+		DefaultType:             defType,
+		DefaultLanguage:         defLang,
+		DefaultPackaging:        defPack,
+		DefaultJavaVersion:      defJava,
+		DefaultBootVersion:      defBoot,
+		DefaultConfigFileFormat: defCfgFormat,
+	}
+	return m, nil
+}
 
-    var data map[string]json.RawMessage
-    if err := json.NewDecoder(resp.Body).Decode(&data); err != nil {
-        return nil, err
-    }
-    type valueItem struct {
-        ID      string `json:"id"`
-        Name    string `json:"name"`
-        Default bool   `json:"default"`
-    }
-    type section struct {
-        Default string      `json:"default"`
-        Values  []valueItem `json:"values"`
-    }
-    extractIDs := func(key string) ([]string, string) {
-        raw, ok := data[key]
-        if !ok {
-            return nil, ""
-        }
-        var sec section
-        if err := json.Unmarshal(raw, &sec); err != nil {
-            return nil, ""
-        }
-        out := make([]string, 0, len(sec.Values))
-        for _, v := range sec.Values {
-            if v.ID != "" {
-                out = append(out, v.ID)
-            }
-        }
-        def := sec.Default
-        if def == "" {
-            for _, v := range sec.Values {
-                if v.Default {
-                    def = v.ID
-                    break
-                }
-            }
-        }
-        return out, def
-    }
-    types, defType := extractIDs("type")
-    langs, defLang := extractIDs("language")
-    packs, defPack := extractIDs("packaging")
-    javas, defJava := extractIDs("javaVersion")
-    boots, defBoot := extractIDs("bootVersion")
-    m := &clientMeta{
-        Types:             types,
-        Languages:         langs,
-        Packagings:        packs,
-        JavaVersions:      javas,
-        BootVersions:      boots,
-        DefaultType:        defType,
-        DefaultLanguage:    defLang,
-        DefaultPackaging:   defPack,
-        DefaultJavaVersion: defJava,
-        DefaultBootVersion: defBoot,
-    }
-    return m, nil
+func fetchMetadataPayload(client *http.Client, base string) (map[string]json.RawMessage, error) {
+	endpoints := []string{base + "/", base + "/metadata/client"}
+	var lastErr error
+	for _, endpoint := range endpoints {
+		req, _ := http.NewRequest(http.MethodGet, endpoint, nil)
+		req.Header.Set("Accept", "application/vnd.initializr.v2.3+json, application/json")
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+			lastErr = fmt.Errorf("status %s", resp.Status)
+			resp.Body.Close()
+			continue
+		}
+		var data map[string]json.RawMessage
+		err = json.NewDecoder(resp.Body).Decode(&data)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		return data, nil
+	}
+	if lastErr != nil {
+		return nil, lastErr
+	}
+	return nil, fmt.Errorf("metadata unavailable from %s", base)
 }
 
 func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string, timeout int, selected map[string]bool, catalog map[string]depOption) {
@@ -453,88 +495,88 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
 				showModal(app, pages, fmt.Sprintf("Failed to fetch dependencies:\n%v", err), 8*time.Second, nil)
 				return
 			}
-            // Sort by group then name
-            sort.Slice(deps, func(i, j int) bool {
-                if deps[i].Group == deps[j].Group {
-                    return strings.ToLower(deps[i].Name) < strings.ToLower(deps[j].Name)
-                }
-                return strings.ToLower(deps[i].Group) < strings.ToLower(deps[j].Group)
-            })
+			// Sort by group then name
+			sort.Slice(deps, func(i, j int) bool {
+				if deps[i].Group == deps[j].Group {
+					return strings.ToLower(deps[i].Name) < strings.ToLower(deps[j].Name)
+				}
+				return strings.ToLower(deps[i].Group) < strings.ToLower(deps[j].Group)
+			})
 
-            // Update catalog
-            for _, d := range deps {
-                if d.ID != "" {
-                    catalog[d.ID] = d
-                }
-            }
+			// Update catalog
+			for _, d := range deps {
+				if d.ID != "" {
+					catalog[d.ID] = d
+				}
+			}
 
-            // UI: filter input + list (grouped by group)
-            filter := tview.NewInputField().SetLabel("Filter: ")
-            list := tview.NewList()
-            list.SetBorder(true).SetTitle(" Select Dependencies (Enter/Space: toggle, d: done) ")
+			// UI: filter input + list (grouped by group)
+			filter := tview.NewInputField().SetLabel("Filter: ")
+			list := tview.NewList()
+			list.SetBorder(true).SetTitle(" Select Dependencies (Enter/Space: toggle, d: done) ")
 
-            // Row view model for grouped rendering
-            type depRow struct {
-                header bool
-                group  string
-                dep    depOption
-            }
-            rows := []depRow{}
+			// Row view model for grouped rendering
+			type depRow struct {
+				header bool
+				group  string
+				dep    depOption
+			}
+			rows := []depRow{}
 
-            // Helper to build visible list from filter, grouped
-            filtered := make([]depOption, len(deps))
-            copy(filtered, deps)
-            rebuild := func() {
-                q := strings.ToLower(strings.TrimSpace(filter.GetText()))
-                filtered = filtered[:0]
-                for _, d := range deps {
-                    if q == "" || strings.Contains(strings.ToLower(d.ID), q) || strings.Contains(strings.ToLower(d.Name), q) || strings.Contains(strings.ToLower(d.Group), q) {
-                        filtered = append(filtered, d)
-                    }
-                }
-                // build rows with headers
-                rows = rows[:0]
-                var prevGroup string
-                for i, d := range filtered {
-                    g := strings.TrimSpace(d.Group)
-                    if g == "" {
-                        g = "Other"
-                    }
-                    if i == 0 || !strings.EqualFold(prevGroup, g) {
-                        rows = append(rows, depRow{header: true, group: g})
-                        prevGroup = g
-                    }
-                    rows = append(rows, depRow{dep: d, group: g})
-                }
-                // fill list
-                list.Clear()
-                for _, r := range rows {
-                    if r.header {
-                        list.AddItem("== "+r.group+" ==", "", 0, nil)
-                    } else {
-                        list.AddItem(depLabel(r.dep, selected[r.dep.ID]), "", 0, nil)
-                    }
-                }
-            }
-            filter.SetChangedFunc(func(text string) { rebuild() })
-            // Tab/Backtab/Enter move focus from filter -> list. Esc closes.
-            filter.SetDoneFunc(func(key tcell.Key) {
-                switch key {
-                case tcell.KeyTab, tcell.KeyEnter:
-                    app.SetFocus(list)
-                case tcell.KeyBacktab:
-                    // stay on filter; no-op to avoid leaving dialog
-                case tcell.KeyEsc:
-                    pages.RemovePage("deps")
-                }
-            })
-            filter.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-                if ev.Key() == tcell.KeyDown {
-                    app.SetFocus(list)
-                    return nil
-                }
-                return ev
-            })
+			// Helper to build visible list from filter, grouped
+			filtered := make([]depOption, len(deps))
+			copy(filtered, deps)
+			rebuild := func() {
+				q := strings.ToLower(strings.TrimSpace(filter.GetText()))
+				filtered = filtered[:0]
+				for _, d := range deps {
+					if q == "" || strings.Contains(strings.ToLower(d.ID), q) || strings.Contains(strings.ToLower(d.Name), q) || strings.Contains(strings.ToLower(d.Group), q) {
+						filtered = append(filtered, d)
+					}
+				}
+				// build rows with headers
+				rows = rows[:0]
+				var prevGroup string
+				for i, d := range filtered {
+					g := strings.TrimSpace(d.Group)
+					if g == "" {
+						g = "Other"
+					}
+					if i == 0 || !strings.EqualFold(prevGroup, g) {
+						rows = append(rows, depRow{header: true, group: g})
+						prevGroup = g
+					}
+					rows = append(rows, depRow{dep: d, group: g})
+				}
+				// fill list
+				list.Clear()
+				for _, r := range rows {
+					if r.header {
+						list.AddItem("== "+r.group+" ==", "", 0, nil)
+					} else {
+						list.AddItem(depLabel(r.dep, selected[r.dep.ID]), "", 0, nil)
+					}
+				}
+			}
+			filter.SetChangedFunc(func(text string) { rebuild() })
+			// Tab/Backtab/Enter move focus from filter -> list. Esc closes.
+			filter.SetDoneFunc(func(key tcell.Key) {
+				switch key {
+				case tcell.KeyTab, tcell.KeyEnter:
+					app.SetFocus(list)
+				case tcell.KeyBacktab:
+					// stay on filter; no-op to avoid leaving dialog
+				case tcell.KeyEsc:
+					pages.RemovePage("deps")
+				}
+			})
+			filter.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				if ev.Key() == tcell.KeyDown {
+					app.SetFocus(list)
+					return nil
+				}
+				return ev
+			})
 
 			rebuild()
 
@@ -542,60 +584,60 @@ func showDepsSelector(app *tview.Application, pages *tview.Pages, baseURL string
 				pages.RemovePage("deps")
 				app.SetFocus(pages)
 			})
-            list.SetSelectedFunc(func(i int, mainText, secondaryText string, shortcut rune) {
-                if i >= 0 && i < len(rows) {
-                    r := rows[i]
-                    if r.header {
-                        return
-                    }
-                    d := r.dep
-                    selected[d.ID] = !selected[d.ID]
-                    list.SetItemText(i, depLabel(d, selected[d.ID]), "")
-                    // If newly checked, clear filter to show full list again
-                    if selected[d.ID] {
-                        filter.SetText("")
-                        rebuild()
-                        app.SetFocus(filter)
-                    }
-                }
-            })
-            list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
-                switch ev.Rune() {
-                case 'd', 'D':
-                    pages.RemovePage("deps")
-                    return nil
-                case ' ': // Space toggles
-                    if i := list.GetCurrentItem(); i >= 0 && i < len(rows) {
-                        r := rows[i]
-                        if r.header {
-                            return nil
-                        }
-                        d := r.dep
-                        selected[d.ID] = !selected[d.ID]
-                        list.SetItemText(i, depLabel(d, selected[d.ID]), "")
-                        if selected[d.ID] {
-                            filter.SetText("")
-                            rebuild()
-                            app.SetFocus(filter)
-                        }
-                        return nil
-                    }
-                case '/': // jump to filter input
-                    app.SetFocus(filter)
-                    return nil
-                }
-                switch ev.Key() {
-                case tcell.KeyTab, tcell.KeyBacktab:
-                    app.SetFocus(filter)
-                    return nil
-                }
-                return ev
-            })
+			list.SetSelectedFunc(func(i int, mainText, secondaryText string, shortcut rune) {
+				if i >= 0 && i < len(rows) {
+					r := rows[i]
+					if r.header {
+						return
+					}
+					d := r.dep
+					selected[d.ID] = !selected[d.ID]
+					list.SetItemText(i, depLabel(d, selected[d.ID]), "")
+					// If newly checked, clear filter to show full list again
+					if selected[d.ID] {
+						filter.SetText("")
+						rebuild()
+						app.SetFocus(filter)
+					}
+				}
+			})
+			list.SetInputCapture(func(ev *tcell.EventKey) *tcell.EventKey {
+				switch ev.Rune() {
+				case 'd', 'D':
+					pages.RemovePage("deps")
+					return nil
+				case ' ': // Space toggles
+					if i := list.GetCurrentItem(); i >= 0 && i < len(rows) {
+						r := rows[i]
+						if r.header {
+							return nil
+						}
+						d := r.dep
+						selected[d.ID] = !selected[d.ID]
+						list.SetItemText(i, depLabel(d, selected[d.ID]), "")
+						if selected[d.ID] {
+							filter.SetText("")
+							rebuild()
+							app.SetFocus(filter)
+						}
+						return nil
+					}
+				case '/': // jump to filter input
+					app.SetFocus(filter)
+					return nil
+				}
+				switch ev.Key() {
+				case tcell.KeyTab, tcell.KeyBacktab:
+					app.SetFocus(filter)
+					return nil
+				}
+				return ev
+			})
 
 			flex := tview.NewFlex().SetDirection(tview.FlexRow)
 			flex.AddItem(filter, 1, 0, true)
 			flex.AddItem(list, 0, 1, false)
-            help := tview.NewTextView().SetText("Tab: Filter/List  |  /: focus Filter  |  Enter/Space: toggle  |  d: done  |  Esc: close  |  Type to filter")
+			help := tview.NewTextView().SetText("Tab: Filter/List  |  /: focus Filter  |  Enter/Space: toggle  |  d: done  |  Esc: close  |  Type to filter")
 			help.SetTextColor(tview.Styles.SecondaryTextColor)
 			flex.AddItem(help, 1, 0, false)
 
@@ -673,8 +715,8 @@ func showTextModal(app *tview.Application, pages *tview.Pages, title, text strin
 
 // showStringPicker shows a simple list picker for selecting a string from items.
 func showStringPicker(app *tview.Application, pages *tview.Pages, title string, items []string, onChoose func(string)) {
-    list := tview.NewList()
-    list.SetBorder(true).SetTitle(" " + title + " ")
+	list := tview.NewList()
+	list.SetBorder(true).SetTitle(" " + title + " ")
 	for _, it := range items {
 		val := it
 		list.AddItem(val, "", 0, func() {
@@ -696,6 +738,10 @@ func fetchDependencies(baseURL string, timeout int) ([]depOption, error) {
 	client := &http.Client{Timeout: time.Duration(timeout) * time.Second}
 	base := strings.TrimRight(baseURL, "/")
 
+	// Try API root first (v2.3), then legacy endpoint
+	if deps, err := fetchFromMetadataClient(client, base+"/"); err == nil && len(deps) > 0 {
+		return deps, nil
+	}
 	// Try /metadata/client first
 	if deps, err := fetchFromMetadataClient(client, base+"/metadata/client"); err == nil && len(deps) > 0 {
 		return deps, nil
@@ -711,7 +757,7 @@ func fetchDependencies(baseURL string, timeout int) ([]depOption, error) {
 
 func fetchFromMetadataClient(client *http.Client, url string) ([]depOption, error) {
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.initializr.v2.3+json, application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
@@ -749,7 +795,7 @@ func fetchFromMetadataClient(client *http.Client, url string) ([]depOption, erro
 
 func fetchFromDependencies(client *http.Client, url string) ([]depOption, error) {
 	req, _ := http.NewRequest(http.MethodGet, url, nil)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.initializr.v2.3+json, application/json")
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, err
